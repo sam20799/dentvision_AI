@@ -1528,9 +1528,25 @@ const Footer = () => (
         borderTop: "1px solid var(--c-border)",
         paddingTop: "1.5rem",
         display: "flex", justifyContent: "space-between", alignItems: "center",
+        flexWrap: "wrap", gap: "1rem",
       }}>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", letterSpacing: "0.1em" }}>
-          © 2025 DENT VISION AI — ALL RIGHTS RESERVED
+          © {new Date().getFullYear()} DENT VISION AI — BUILT BY{" "}
+          <a
+            href="https://www.linkedin.com/in/shubhamk07/"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              color: "var(--c-cyan)",
+              textDecoration: "none",
+              letterSpacing: "0.1em",
+              transition: "opacity 0.2s",
+            }}
+            onMouseEnter={e => e.target.style.opacity = "0.7"}
+            onMouseLeave={e => e.target.style.opacity = "1"}
+          >
+            SAM ↗
+          </a>
         </div>
         <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)" }}>
           SYS_V: 4.2.1 | MODEL: DVA-RESNET-152 | STATUS: OPERATIONAL
