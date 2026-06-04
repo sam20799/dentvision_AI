@@ -1074,7 +1074,7 @@ const UploadSection = ({ sectionRef }) => {
       const formData = new FormData();
       formData.append("file", file);
 
-      const response = await fetch("/predict", { method: "POST", body: formData });
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/predict`, {method: "POST",body: formData});
       if (!response.ok) throw new Error(`Server error ${response.status}`);
       const data = await response.json();
       setResults(data);
