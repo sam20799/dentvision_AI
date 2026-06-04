@@ -41,7 +41,7 @@ def predict(image_path):
     if trained_model is None:
         trained_model = carClassifierResnet()
         print("Current working directory:", os.getcwd())
-        trained_model.load_state_dict(torch.load(model_path))
+        trained_model.load_state_dict(torch.load(model_path,map_location="cpu"))
 
     trained_model.eval()
     with torch.no_grad():
