@@ -193,6 +193,42 @@ const GlobalStyle = () => (
       0% { background-position: -200% center; }
       100% { background-position: 200% center; }
     }
+
+    /* ─── MOBILE RESPONSIVE ──────────────────────────────────────── */
+    @media (max-width: 767px) {
+      .hero-headline {
+        font-size: clamp(2.8rem, 14vw, 4.5rem);
+      }
+      .section-label {
+        font-size: 0.6rem;
+        letter-spacing: 0.15em;
+      }
+      .scene-number {
+        font-size: 3.5rem;
+      }
+      .btn-primary, .btn-ghost {
+        min-height: 44px;
+        padding: 0.75rem 1.4rem;
+        font-size: 0.8rem;
+        letter-spacing: 0.12em;
+      }
+    }
+
+    @media (max-width: 479px) {
+      .hero-headline {
+        font-size: clamp(2.4rem, 15vw, 3.8rem);
+      }
+      .btn-primary, .btn-ghost {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+
+    /* ─── TOUCH FRIENDLY ─────────────────────────────────────────── */
+    @media (hover: none) {
+      .btn-primary:active { transform: scale(0.97); opacity: 0.85; }
+      .btn-ghost:active { opacity: 0.7; }
+    }
   `}</style>
 );
 
@@ -267,7 +303,7 @@ const CarBody = ({ color = "#1A1A2E", scanProgress = 0, damageZones = [] }) => {
   const glowRef = useRef();
 
   useFrame((state) => {
-    if (meshRef.current) {
+    if (meshRef.current && (!scanProgress || scanProgress >= 1)) {
       meshRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.3) * 0.1;
     }
     if (glowRef.current) {
@@ -421,7 +457,10 @@ const ScanScene = ({ scanProgress }) => {
   const groupRef = useRef();
   useFrame((state) => {
     if (groupRef.current) {
-      groupRef.current.rotation.y = state.clock.elapsedTime * 0.2;
+      // Pause rotation while beam is sweeping so scan is visible cleanly
+      if (!scanProgress || scanProgress >= 1) {
+        groupRef.current.rotation.y = state.clock.elapsedTime * 0.2;
+      }
     }
   });
 
@@ -544,24 +583,40 @@ const DataOverlay = ({ visible }) => {
 // ─── HERO SECTION ─────────────────────────────────────────────────────────────
 const HeroSection = ({ onAnalyze }) => {
   const [loaded, setLoaded] = useState(false);
+  const isMobile = useWindowWidth() < 768;
   useEffect(() => { setTimeout(() => setLoaded(true), 300); }, []);
 
   return (
     <section style={{
-      position: "relative", height: "100vh", overflow: "hidden",
+      position: "relative",
+      minHeight: "100vh",
+      height: "100svh",
+      overflow: "hidden",
       display: "flex", alignItems: "center",
     }}>
       <GridBackground />
       <ParticleField />
 
-      {/* 3D Canvas */}
-      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <Canvas shadows camera={{ position: [0, 1.5, 5], fov: 45 }}>
-          <Suspense fallback={null}>
-            <HeroScene />
-          </Suspense>
-        </Canvas>
-      </div>
+      {/* 3D Canvas — desktop only, too heavy for mobile */}
+      {!isMobile && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+          <Canvas shadows camera={{ position: [0, 1.5, 5], fov: 45 }}>
+            <Suspense fallback={null}>
+              <HeroScene />
+            </Suspense>
+          </Canvas>
+        </div>
+      )}
+      {/* Mobile: lightweight gradient background */}
+      {isMobile && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 0,
+          background: `
+            radial-gradient(ellipse 120% 70% at 80% 30%, rgba(59,139,235,0.18) 0%, transparent 60%),
+            radial-gradient(ellipse 60% 40% at 20% 70%, rgba(0,212,255,0.1) 0%, transparent 50%)
+          `,
+        }} />
+      )}
 
       {/* Gradient vignette */}
       <div style={{
@@ -576,13 +631,17 @@ const HeroSection = ({ onAnalyze }) => {
       }} />
 
       {/* Content */}
-      <div style={{ position: "relative", zIndex: 2, width: "100%", padding: "0 5vw" }}>
+      <div style={{
+        position: "relative", zIndex: 2, width: "100%",
+        padding: isMobile ? "0 6vw" : "0 5vw",
+        paddingTop: isMobile ? "80px" : 0,
+      }}>
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: loaded ? 1 : 0, y: loaded ? 0 : 40 }}
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
         >
-          <div className="section-label" style={{ marginBottom: "1.5rem" }}>
+          <div className="section-label" style={{ marginBottom: "1rem" }}>
             ◈ NEXT-GEN AUTOMOTIVE INTELLIGENCE
           </div>
           <h1 className="hero-headline">
@@ -594,9 +653,7 @@ const HeroSection = ({ onAnalyze }) => {
                 WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
               }}
-              animate={{
-                backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"],
-              }}
+              animate={{ backgroundPosition: ["0% 50%", "100% 50%", "0% 50%"] }}
               transition={{ duration: 4, repeat: Infinity }}
             >
               VISION
@@ -609,9 +666,11 @@ const HeroSection = ({ onAnalyze }) => {
             animate={{ opacity: loaded ? 1 : 0 }}
             transition={{ delay: 0.6, duration: 0.8 }}
             style={{
-              fontFamily: "var(--font-body)", fontSize: "clamp(1rem, 2vw, 1.25rem)",
-              fontWeight: 300, letterSpacing: "0.1em", color: "var(--c-text-muted)",
-              maxWidth: 500, marginTop: "1.5rem", marginBottom: "2.5rem",
+              fontFamily: "var(--font-body)",
+              fontSize: isMobile ? "clamp(0.95rem, 3.5vw, 1.1rem)" : "clamp(1rem, 2vw, 1.25rem)",
+              fontWeight: 300, letterSpacing: "0.08em", color: "var(--c-text-muted)",
+              maxWidth: isMobile ? "90%" : 500,
+              marginTop: "1rem", marginBottom: "2rem",
               lineHeight: 1.6,
             }}
           >
@@ -622,7 +681,12 @@ const HeroSection = ({ onAnalyze }) => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: loaded ? 1 : 0, y: loaded ? 0 : 20 }}
             transition={{ delay: 0.8, duration: 0.6 }}
-            style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}
+            style={{
+              display: "flex", gap: "0.75rem",
+              flexDirection: isMobile ? "column" : "row",
+              flexWrap: "wrap",
+              maxWidth: isMobile ? 320 : "none",
+            }}
           >
             <button className="btn-primary" onClick={onAnalyze}>
               ▷ Analyze Damage
@@ -634,13 +698,15 @@ const HeroSection = ({ onAnalyze }) => {
         </motion.div>
       </div>
 
-      {/* Corner decorations */}
-      <div style={{ position: "absolute", top: 24, right: 24, zIndex: 2 }}>
-        <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", textAlign: "right" }}>
-          <div>SYS_STATUS: ACTIVE</div>
-          <div style={{ color: "var(--c-cyan)" }}>AI_CORE: ONLINE</div>
+      {/* Corner decorations — desktop only */}
+      {!isMobile && (
+        <div style={{ position: "absolute", top: 24, right: 24, zIndex: 2 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", textAlign: "right" }}>
+            <div>SYS_STATUS: ACTIVE</div>
+            <div style={{ color: "var(--c-cyan)" }}>AI_CORE: ONLINE</div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Scroll indicator */}
       <motion.div
@@ -661,16 +727,17 @@ const HeroSection = ({ onAnalyze }) => {
 // ─── STORY SCENE ──────────────────────────────────────────────────────────────
 const StoryScene = ({ number, label, children, align = "left" }) => {
   const ref = useRef();
-  const inView = useInView(ref, { threshold: 0.3, once: false });
+  const isMobile = useWindowWidth() < 768;
+  const inView = useInView(ref, { threshold: 0.2, once: false });
 
   return (
     <motion.div
       ref={ref}
-      initial={{ opacity: 0, y: 60 }}
-      animate={{ opacity: inView ? 1 : 0, y: inView ? 0 : 60 }}
-      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+      initial={{ opacity: 0, y: 40 }}
+      animate={{ opacity: inView ? 1 : 0, y: inView ? 0 : 40 }}
+      transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
       style={{
-        padding: "8vh 5vw",
+        padding: isMobile ? "6vh 5vw" : "8vh 5vw",
         maxWidth: 1200,
         margin: "0 auto",
         position: "relative",
@@ -798,25 +865,42 @@ const { scrollYProgress } = useScroll({
             </div>
           </div>
           <div style={{
-            height: isMobile ? 220 : 300, position: "relative",
+            height: isMobile ? 180 : 300, position: "relative",
             border: "1px solid var(--c-border)",
             overflow: "hidden",
           }}>
-            <Canvas camera={{ position: [0, 1.2, 4.5], fov: 50 }}>
-              <Suspense fallback={null}>
-                <ambientLight intensity={0.3} />
-                <pointLight position={[3, 3, 3]} color="#3B8BEB" intensity={2} />
-                <pointLight position={[-3, 2, -3]} color="#00D4FF" intensity={1} />
-                <Float speed={1.5} rotationIntensity={0.3} floatIntensity={0.3}>
-                  <CarBody color="#111827" />
-                </Float>
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.45, 0]}>
-                  <planeGeometry args={[10, 10]} />
-                  <meshStandardMaterial color="#050810" metalness={0.8} roughness={0.8} />
-                </mesh>
-                <ContactShadows position={[0, -0.44, 0]} opacity={0.5} scale={5} blur={2} />
-              </Suspense>
-            </Canvas>
+            {!isMobile ? (
+              <Canvas camera={{ position: [0, 1.2, 4.5], fov: 50 }}>
+                <Suspense fallback={null}>
+                  <ambientLight intensity={0.3} />
+                  <pointLight position={[3, 3, 3]} color="#3B8BEB" intensity={2} />
+                  <pointLight position={[-3, 2, -3]} color="#00D4FF" intensity={1} />
+                  <Float speed={1.5} rotationIntensity={0.3} floatIntensity={0.3}>
+                    <CarBody color="#111827" />
+                  </Float>
+                  <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.45, 0]}>
+                    <planeGeometry args={[10, 10]} />
+                    <meshStandardMaterial color="#050810" metalness={0.8} roughness={0.8} />
+                  </mesh>
+                  <ContactShadows position={[0, -0.44, 0]} opacity={0.5} scale={5} blur={2} />
+                </Suspense>
+              </Canvas>
+            ) : (
+              <div style={{
+                height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                background: "radial-gradient(ellipse 80% 60% at 50% 50%, rgba(59,139,235,0.1) 0%, transparent 70%)",
+                flexDirection: "column", gap: 12,
+              }}>
+                <motion.div style={{ fontSize: "3rem", color: "var(--c-blue)" }}
+                  animate={{ y: [-4, 4, -4], rotate: [-2, 2, -2] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
+                  ◈
+                </motion.div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.15em" }}>
+                  VEHICLE SCAN READY
+                </div>
+              </div>
+            )}
             <ScanOverlay isScanning={false} />
           </div>
         </div>
@@ -826,16 +910,46 @@ const { scrollYProgress } = useScroll({
       <StoryScene number="02" label="◉ AI NEURAL SCAN">
         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? "2rem" : "4rem", alignItems: "center" }}>
           <div style={{
-            height: isMobile ? 260 : 350, position: "relative",
+            height: isMobile ? 240 : 350, position: "relative",
             border: "1px solid rgba(0,212,255,0.15)",
             overflow: "hidden",
           }}>
-            <Canvas camera={{ position: [0, 1.2, 4.5], fov: 50 }}>
-              <Suspense fallback={null}>
-                <ScanScene scanProgress={scanProgress} />
-              </Suspense>
-            </Canvas>
-            <ScanOverlay isScanning={scanProgress > 0 && scanProgress < 1} />
+            {!isMobile ? (
+              <Canvas camera={{ position: [0, 1.2, 4.5], fov: 50 }}>
+                <Suspense fallback={null}>
+                  <ScanScene scanProgress={scanProgress} />
+                </Suspense>
+              </Canvas>
+            ) : (
+              <div style={{
+                height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+                background: "radial-gradient(ellipse 80% 60% at 50% 50%, rgba(0,212,255,0.08) 0%, transparent 70%)",
+                position: "relative", overflow: "hidden",
+              }}>
+                {/* CSS scan line for mobile */}
+                {scanProgress > 0 && scanProgress < 1 && (
+                  <motion.div style={{
+                    position: "absolute", left: 0, right: 0, height: 2,
+                    background: "linear-gradient(90deg, transparent, var(--c-cyan), transparent)",
+                    boxShadow: "0 0 12px var(--c-cyan)",
+                  }}
+                    animate={{ top: ["0%", "100%"] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                  />
+                )}
+                <motion.div style={{ textAlign: "center" }}>
+                  <motion.div style={{ fontSize: "3.5rem", color: "var(--c-cyan)" }}
+                    animate={{ opacity: scanProgress > 0 && scanProgress < 1 ? [0.4, 1, 0.4] : 1 }}
+                    transition={{ duration: 1, repeat: Infinity }}>
+                    ◉
+                  </motion.div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-cyan)", letterSpacing: "0.15em", marginTop: 8 }}>
+                    {scanProgress > 0 && scanProgress < 1 ? `SCANNING ${Math.round(scanProgress * 100)}%` : scanProgress >= 1 ? "SCAN COMPLETE" : "AI READY"}
+                  </div>
+                </motion.div>
+              </div>
+            )}
+            <ScanOverlay isScanning={!isMobile && scanProgress > 0 && scanProgress < 1} />
             <DataOverlay visible={showDataOverlay} />
 
             {/* Live indicator */}
@@ -887,7 +1001,7 @@ const { scrollYProgress } = useScroll({
             <p style={{ color: "var(--c-text-muted)", lineHeight: 1.8, fontWeight: 300, fontSize: "1.05rem" }}>
               A high-resolution convolutional network sweeps every pixel. Scanning lines isolate damage zones while suppressing false positives through multi-pass confidence scoring.
             </p>
-            <div style={{ marginTop: "2rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ marginTop: "2rem", display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
               {[
                 { label: "Resolution", value: "4096×4096" },
                 { label: "Layers", value: "152 Deep" },
@@ -920,13 +1034,13 @@ const { scrollYProgress } = useScroll({
             PRECISION CLASSIFICATION
           </h2>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: "1.5rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: isMobile ? "1rem" : "1.5rem" }}>
           {features.map((f, i) => (
             <motion.div
               key={i}
               whileHover={{ y: -8, borderColor: "rgba(0,212,255,0.3)" }}
               style={{
-                padding: "2rem",
+                padding: isMobile ? "1.25rem" : "2rem",
                 background: "rgba(255,255,255,0.02)",
                 border: "1px solid var(--c-border)",
                 transition: "border-color 0.3s",
@@ -973,7 +1087,7 @@ const { scrollYProgress } = useScroll({
             <p style={{ color: "var(--c-text-muted)", lineHeight: 1.8, fontWeight: 300, fontSize: "1.05rem", marginBottom: "2.5rem" }}>
               From a single inspection to an entire rental fleet — Dent Vision AI scales horizontally with zero performance degradation.
             </p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr", gap: isMobile ? "1rem" : "1.5rem" }}>
               {stats.map((stat, i) => (
                 <div key={i}>
                   <div style={{
@@ -989,17 +1103,18 @@ const { scrollYProgress } = useScroll({
               ))}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-            {Array.from({ length: 9 }, (_, i) => (
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: isMobile ? 6 : 8 }}>
+            {Array.from({ length: isMobile ? 6 : 9 }, (_, i) => (
               <motion.div
                 key={i}
                 style={{
-                  height: isMobile ? 60 : 80,
+                  height: isMobile ? 56 : 80,
                   background: "rgba(255,255,255,0.02)",
                   border: "1px solid var(--c-border)",
                   position: "relative",
                   overflow: "hidden",
                   display: "flex", alignItems: "center", justifyContent: "center",
+                  flexDirection: "column", gap: 4,
                 }}
                 animate={{
                   borderColor: [
@@ -1010,20 +1125,29 @@ const { scrollYProgress } = useScroll({
                 }}
                 transition={{ duration: 2 + i * 0.3, repeat: Infinity, delay: i * 0.2 }}
               >
-                {isMobile ? (
-                  <div style={{
-                    fontFamily: "var(--font-mono)", fontSize: "0.5rem",
-                    color: "var(--c-text-dim)", letterSpacing: "0.1em",
-                  }}>◈</div>
-                ) : (
-                  <Canvas camera={{ position: [0, 0.8, 3], fov: 60 }}>
-                    <ambientLight intensity={0.4} />
-                    <pointLight position={[2, 2, 2]} color="#3B8BEB" intensity={1.5} />
-                    <Float speed={2} rotationIntensity={0.5} floatIntensity={0.2}>
-                      <CarBody color={`hsl(${220 + i * 10}, 40%, 15%)`} />
-                    </Float>
-                  </Canvas>
-                )}
+                {/* CSS-animated car silhouette (no Canvas — prevents 9 WebGL contexts) */}
+                <motion.div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: isMobile ? "0.55rem" : "0.7rem",
+                    color: `hsl(${210 + i * 12}, 70%, 60%)`,
+                    letterSpacing: "0.05em",
+                    lineHeight: 1,
+                  }}
+                  animate={{ y: [-2, 2, -2], opacity: [0.5, 1, 0.5] }}
+                  transition={{ duration: 2 + i * 0.3, repeat: Infinity, ease: "easeInOut", delay: i * 0.15 }}
+                >
+                  ◈
+                </motion.div>
+                <motion.div
+                  style={{
+                    height: 1,
+                    background: `linear-gradient(90deg, transparent, hsl(${210 + i * 12}, 70%, 60%), transparent)`,
+                    width: "60%",
+                  }}
+                  animate={{ scaleX: [0, 1, 0] }}
+                  transition={{ duration: 1.5 + i * 0.2, repeat: Infinity, delay: i * 0.1 }}
+                />
               </motion.div>
             ))}
           </div>
@@ -1161,7 +1285,7 @@ const getSeverity = (cls = "") => {
   ];
 
   return (
-    <section ref={sectionRef} style={{ padding: "10vh 5vw", position: "relative", minHeight: "100vh" }}>
+    <section ref={sectionRef} style={{ padding: isMobile ? "6vh 5vw 10vh" : "10vh 5vw", position: "relative", minHeight: "100vh" }}>
       <GridBackground opacity={0.3} />
       <ParticleField />
 
@@ -1196,7 +1320,7 @@ const getSeverity = (cls = "") => {
               cursor: preview ? "default" : "pointer",
               position: "relative",
               overflow: "hidden",
-              minHeight: 280,
+              minHeight: isMobile ? (preview ? 180 : 200) : 280,
               transition: "border-color 0.3s, background 0.3s",
             }}
           >
@@ -1220,7 +1344,7 @@ const getSeverity = (cls = "") => {
                   src={preview}
                   alt="Vehicle preview"
                   style={{
-                    maxWidth: "100%", maxHeight: 320,
+                    maxWidth: "100%", maxHeight: isMobile ? 200 : 320,
                     objectFit: "contain",
                     filter: scanning ? "brightness(0.5) saturate(0.3)" : "brightness(1)",
                     transition: "filter 0.5s",
