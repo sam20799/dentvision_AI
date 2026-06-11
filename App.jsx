@@ -5,17 +5,6 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Float, MeshReflectorMaterial, ContactShadows, Sphere, Box, Torus, Cylinder, OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 
-// ─── RESPONSIVE HOOK ──────────────────────────────────────────────────────────
-const useWindowWidth = () => {
-  const [width, setWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
-  useEffect(() => {
-    const handler = () => setWidth(window.innerWidth);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-  return width;
-};
-
 // ─── GLOBAL STYLES ────────────────────────────────────────────────────────────
 const GlobalStyle = () => (
   <style>{`
@@ -49,9 +38,7 @@ const GlobalStyle = () => (
       color: var(--c-text);
       font-family: var(--font-body);
       overflow-x: hidden;
-    }
-    @media (pointer: fine) {
-      body { cursor: crosshair; }
+      cursor: crosshair;
     }
 
     ::selection { background: rgba(59,139,235,0.3); color: #fff; }
@@ -198,9 +185,7 @@ const GlobalStyle = () => (
 
 // ─── PARTICLE FIELD ───────────────────────────────────────────────────────────
 const ParticleField = () => {
-  const width = useWindowWidth();
-  const count = width < 768 ? 20 : 60;
-  const particles = Array.from({ length: count }, (_, i) => ({
+  const particles = Array.from({ length: 60 }, (_, i) => ({
     id: i,
     x: Math.random() * 100,
     y: Math.random() * 100,
@@ -480,9 +465,6 @@ const ScanOverlay = ({ isScanning }) => {
 
 // ─── DATA OVERLAY ─────────────────────────────────────────────────────────────
 const DataOverlay = ({ visible }) => {
-  const isMobile = useWindowWidth() < 768;
-  if (isMobile) return null; // data overlays don't work on narrow screens
-
   const dataPoints = [
     { label: "FRONT_IMPACT_ZONE", value: "0.83", pos: { top: "20%", left: "8%" } },
     { label: "REAR_DEFORMATION", value: "0.61", pos: { top: "65%", right: "8%" } },
@@ -689,7 +671,6 @@ const ScrollStory = ({ onScanTrigger }) => {
   const [scanProgress, setScanProgress] = useState(0);
   const [showDataOverlay, setShowDataOverlay] = useState(false);
   const [activeScene, setActiveScene] = useState(0);
-  const isMobile = useWindowWidth() < 768;
 
   // ✅ Persist across renders and scroll events
   const hasTriggered = useRef(false);
@@ -773,7 +754,7 @@ const { scrollYProgress } = useScroll({
 
       {/* Scene 1: Vehicle Entry */}
       <StoryScene number="01" label="◈ VEHICLE ACQUISITION">
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? "2rem" : "4rem", alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4rem", alignItems: "center" }}>
           <div>
             <h2 style={{
               fontFamily: "var(--font-display)",
@@ -798,7 +779,7 @@ const { scrollYProgress } = useScroll({
             </div>
           </div>
           <div style={{
-            height: isMobile ? 220 : 300, position: "relative",
+            height: 300, position: "relative",
             border: "1px solid var(--c-border)",
             overflow: "hidden",
           }}>
@@ -824,9 +805,9 @@ const { scrollYProgress } = useScroll({
 
       {/* Scene 2: AI Scanning */}
       <StoryScene number="02" label="◉ AI NEURAL SCAN">
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? "2rem" : "4rem", alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4rem", alignItems: "center" }}>
           <div style={{
-            height: isMobile ? 260 : 350, position: "relative",
+            height: 350, position: "relative",
             border: "1px solid rgba(0,212,255,0.15)",
             overflow: "hidden",
           }}>
@@ -920,7 +901,7 @@ const { scrollYProgress } = useScroll({
             PRECISION CLASSIFICATION
           </h2>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: "1.5rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1.5rem" }}>
           {features.map((f, i) => (
             <motion.div
               key={i}
@@ -957,7 +938,7 @@ const { scrollYProgress } = useScroll({
 
       {/* Scene 4: Scalability */}
       <StoryScene number="04" label="◑ ENTERPRISE SCALE">
-        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: isMobile ? "2rem" : "4rem", alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4rem", alignItems: "center" }}>
           <div>
             <h2 style={{
               fontFamily: "var(--font-display)",
@@ -994,12 +975,11 @@ const { scrollYProgress } = useScroll({
               <motion.div
                 key={i}
                 style={{
-                  height: isMobile ? 60 : 80,
+                  height: 80,
                   background: "rgba(255,255,255,0.02)",
                   border: "1px solid var(--c-border)",
                   position: "relative",
                   overflow: "hidden",
-                  display: "flex", alignItems: "center", justifyContent: "center",
                 }}
                 animate={{
                   borderColor: [
@@ -1010,20 +990,13 @@ const { scrollYProgress } = useScroll({
                 }}
                 transition={{ duration: 2 + i * 0.3, repeat: Infinity, delay: i * 0.2 }}
               >
-                {isMobile ? (
-                  <div style={{
-                    fontFamily: "var(--font-mono)", fontSize: "0.5rem",
-                    color: "var(--c-text-dim)", letterSpacing: "0.1em",
-                  }}>◈</div>
-                ) : (
-                  <Canvas camera={{ position: [0, 0.8, 3], fov: 60 }}>
-                    <ambientLight intensity={0.4} />
-                    <pointLight position={[2, 2, 2]} color="#3B8BEB" intensity={1.5} />
-                    <Float speed={2} rotationIntensity={0.5} floatIntensity={0.2}>
-                      <CarBody color={`hsl(${220 + i * 10}, 40%, 15%)`} />
-                    </Float>
-                  </Canvas>
-                )}
+                <Canvas camera={{ position: [0, 0.8, 3], fov: 60 }}>
+                  <ambientLight intensity={0.4} />
+                  <pointLight position={[2, 2, 2]} color="#3B8BEB" intensity={1.5} />
+                  <Float speed={2} rotationIntensity={0.5} floatIntensity={0.2}>
+                    <CarBody color={`hsl(${220 + i * 10}, 40%, 15%)`} />
+                  </Float>
+                </Canvas>
               </motion.div>
             ))}
           </div>
@@ -1066,7 +1039,6 @@ const UploadSection = ({ sectionRef }) => {
   const [error, setError] = useState(null);
   const [scanStage, setScanStage] = useState(0);
   const fileInputRef = useRef();
-  const isMobile = useWindowWidth() < 768;
 
   const handleFile = (f) => {
     if (!f || !f.type.startsWith("image/")) return;
@@ -1175,7 +1147,7 @@ const getSeverity = (cls = "") => {
           }}>UPLOAD & ANALYZE</h2>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: preview && results && !isMobile ? "1fr 1fr" : "1fr", gap: "2rem" }}>
+        <div style={{ display: "grid", gridTemplateColumns: preview ? "1fr 1fr" : "1fr", gap: "2rem" }}>
           {/* Upload zone */}
           <motion.div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -1350,12 +1322,11 @@ const getSeverity = (cls = "") => {
                   }}>{getClassIcon(results.class)}</div>
                   <div style={{
                     fontFamily: "var(--font-display)",
-                    fontSize: isMobile ? "clamp(1.6rem, 7vw, 2.4rem)" : "3rem",
+                    fontSize: "3rem",
                     color: getClassColor(results.class),
                     lineHeight: 1,
                     letterSpacing: "0.05em",
                     marginBottom: "0.5rem",
-                    wordBreak: "break-word",
                   }}>
                    {results.class
                       .replace("F_Normal", "NO DAMAGE DETECTED")
@@ -1368,7 +1339,6 @@ const getSeverity = (cls = "") => {
                   </div>
                   <div style={{
                     display: "flex", gap: "1.5rem", marginBottom: "2rem",
-                    flexWrap: "wrap",
                     fontFamily: "var(--font-mono)", fontSize: "0.7rem",
                     color: "var(--c-text-muted)", letterSpacing: "0.1em",
                   }}>
@@ -1466,137 +1436,69 @@ const getSeverity = (cls = "") => {
 const Navigation = ({ onAnalyze }) => {
   const { scrollY } = useScroll();
   const bg = useTransform(scrollY, [0, 100], ["rgba(2,4,8,0)", "rgba(2,4,8,0.95)"]);
-  const isMobile = useWindowWidth() < 768;
-  const [menuOpen, setMenuOpen] = useState(false);
 
   return (
-    <>
-      <motion.nav
-        style={{
-          position: "fixed", top: 0, left: 0, right: 0,
-          zIndex: 100, background: bg,
-          borderBottom: "1px solid transparent",
-          padding: "0 5vw",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          height: 64,
-          backdropFilter: "blur(20px)",
-        }}
-      >
-        <div style={{
-          fontFamily: "var(--font-display)",
-          fontSize: "1.3rem",
-          letterSpacing: "0.15em",
-          color: "#fff",
-          display: "flex", alignItems: "center", gap: 12,
-        }}>
-          <span style={{ color: "var(--c-cyan)" }}>◈</span>
-          DENT VISION
-          <span style={{
-            fontSize: "0.65rem", fontFamily: "var(--font-mono)",
-            color: "var(--c-text-dim)", letterSpacing: "0.2em",
-            padding: "2px 8px", border: "1px solid var(--c-border)",
-            verticalAlign: "middle",
-          }}>AI</span>
-        </div>
+    <motion.nav
+      style={{
+        position: "fixed", top: 0, left: 0, right: 0,
+        zIndex: 100, background: bg,
+        borderBottom: "1px solid transparent",
+        padding: "0 5vw",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        height: 64,
+        backdropFilter: "blur(20px)",
+      }}
+    >
+      <div style={{
+        fontFamily: "var(--font-display)",
+        fontSize: "1.3rem",
+        letterSpacing: "0.15em",
+        color: "#fff",
+        display: "flex", alignItems: "center", gap: 12,
+      }}>
+        <span style={{ color: "var(--c-cyan)" }}>◈</span>
+        DENT VISION
+        <span style={{
+          fontSize: "0.65rem", fontFamily: "var(--font-mono)",
+          color: "var(--c-text-dim)", letterSpacing: "0.2em",
+          padding: "2px 8px", border: "1px solid var(--c-border)",
+          verticalAlign: "middle",
+        }}>AI</span>
+      </div>
 
-        {isMobile ? (
+      <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
+        {["Technology", "Demo", "Pricing"].map(item => (
           <button
-            onClick={() => setMenuOpen(o => !o)}
+            key={item}
             style={{
-              background: "none", border: "1px solid var(--c-border)",
-              cursor: "pointer", padding: "8px 10px",
-              display: "flex", flexDirection: "column", gap: 5, alignItems: "center",
+              background: "none", border: "none", cursor: "pointer",
+              fontFamily: "var(--font-body)", fontSize: "0.85rem",
+              fontWeight: 600, letterSpacing: "0.1em", color: "var(--c-text-muted)",
+              textTransform: "uppercase", transition: "color 0.2s",
             }}
+            onMouseEnter={e => e.target.style.color = "#fff"}
+            onMouseLeave={e => e.target.style.color = "var(--c-text-muted)"}
           >
-            {[0, 1, 2].map(i => (
-              <motion.div
-                key={i}
-                animate={menuOpen ? {
-                  rotate: i === 0 ? 45 : i === 2 ? -45 : 0,
-                  y: i === 0 ? 7 : i === 2 ? -7 : 0,
-                  opacity: i === 1 ? 0 : 1,
-                } : { rotate: 0, y: 0, opacity: 1 }}
-                style={{ width: 20, height: 1.5, background: "var(--c-cyan)", display: "block" }}
-              />
-            ))}
+            {item}
           </button>
-        ) : (
-          <div style={{ display: "flex", gap: "2rem", alignItems: "center" }}>
-            {["Technology", "Demo", "Pricing"].map(item => (
-              <button
-                key={item}
-                style={{
-                  background: "none", border: "none", cursor: "pointer",
-                  fontFamily: "var(--font-body)", fontSize: "0.85rem",
-                  fontWeight: 600, letterSpacing: "0.1em", color: "var(--c-text-muted)",
-                  textTransform: "uppercase", transition: "color 0.2s",
-                }}
-                onMouseEnter={e => e.target.style.color = "#fff"}
-                onMouseLeave={e => e.target.style.color = "var(--c-text-muted)"}
-              >
-                {item}
-              </button>
-            ))}
-            <button className="btn-primary" onClick={onAnalyze} style={{ fontSize: "0.75rem", padding: "0.6rem 1.5rem" }}>
-              Analyze
-            </button>
-          </div>
-        )}
-      </motion.nav>
-
-      <AnimatePresence>
-        {isMobile && menuOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            style={{
-              position: "fixed", top: 64, left: 0, right: 0,
-              zIndex: 99, background: "rgba(6,13,20,0.98)",
-              borderBottom: "1px solid var(--c-border)",
-              backdropFilter: "blur(20px)",
-              padding: "1.5rem 5vw",
-              display: "flex", flexDirection: "column", gap: "1.2rem",
-            }}
-          >
-            {["Technology", "Demo", "Pricing"].map(item => (
-              <button key={item} onClick={() => setMenuOpen(false)} style={{
-                background: "none", border: "none", cursor: "pointer",
-                fontFamily: "var(--font-body)", fontSize: "1rem",
-                fontWeight: 600, letterSpacing: "0.1em", color: "var(--c-text-muted)",
-                textTransform: "uppercase", textAlign: "left", padding: "4px 0",
-              }}>
-                {item}
-              </button>
-            ))}
-            <button className="btn-primary" onClick={() => { setMenuOpen(false); onAnalyze(); }}
-              style={{ fontSize: "0.85rem", padding: "0.8rem 1.5rem" }}>
-              ▷ Analyze
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
+        ))}
+        <button className="btn-primary" onClick={onAnalyze} style={{ fontSize: "0.75rem", padding: "0.6rem 1.5rem" }}>
+          Analyze
+        </button>
+      </div>
+    </motion.nav>
   );
 };
 
 // ─── FOOTER ───────────────────────────────────────────────────────────────────
-const Footer = () => {
-  const isMobile = useWindowWidth() < 768;
-  const isTablet = useWindowWidth() < 1024;
-  return (
+const Footer = () => (
   <footer style={{
     padding: "4rem 5vw 2rem",
     borderTop: "1px solid var(--c-border)",
     background: "#010204",
   }}>
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr 1fr" : "2fr 1fr 1fr 1fr",
-        gap: isMobile ? "2rem" : "3rem",
-        marginBottom: "3rem",
-      }}>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: "3rem", marginBottom: "3rem" }}>
         <div>
           <div style={{ fontFamily: "var(--font-display)", fontSize: "1.5rem", letterSpacing: "0.1em", marginBottom: "1rem" }}>
             <span style={{ color: "var(--c-cyan)" }}>◈</span> DENT VISION AI
@@ -1605,66 +1507,22 @@ const Footer = () => {
             Next-generation vehicle damage detection powered by deep learning. Built for insurers, rental fleets, and automotive professionals.
           </p>
         </div>
-        {isTablet && !isMobile ? (
-          // On tablet: merge 3 link columns into 2
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
-              {[
-                { title: "Platform", links: ["Technology", "API Docs", "Integrations", "Security"] },
-                { title: "Company", links: ["About", "Careers", "Blog", "Contact"] },
-                { title: "Legal", links: ["Privacy", "Terms", "Cookies", "GDPR"] },
-              ].map(col => (
-                <div key={col.title}>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", letterSpacing: "0.2em", marginBottom: "1rem" }}>
-                    {col.title}
-                  </div>
-                  {col.links.map(link => (
-                    <div key={link} style={{ color: "var(--c-text-muted)", fontSize: "0.85rem", marginBottom: "0.5rem", cursor: "pointer", fontWeight: 300 }}>
-                      {link}
-                    </div>
-                  ))}
-                </div>
-              ))}
+        {[
+          { title: "Platform", links: ["Technology", "API Docs", "Integrations", "Security"] },
+          { title: "Company", links: ["About", "Careers", "Blog", "Contact"] },
+          { title: "Legal", links: ["Privacy", "Terms", "Cookies", "GDPR"] },
+        ].map(col => (
+          <div key={col.title}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", letterSpacing: "0.2em", marginBottom: "1rem" }}>
+              {col.title}
             </div>
-          </>
-        ) : isMobile ? (
-          // On mobile: all 3 columns in a single row
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem" }}>
-            {[
-              { title: "Platform", links: ["Technology", "API Docs", "Integrations", "Security"] },
-              { title: "Company", links: ["About", "Careers", "Blog", "Contact"] },
-              { title: "Legal", links: ["Privacy", "Terms", "Cookies", "GDPR"] },
-            ].map(col => (
-              <div key={col.title}>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.15em", marginBottom: "0.8rem" }}>
-                  {col.title}
-                </div>
-                {col.links.map(link => (
-                  <div key={link} style={{ color: "var(--c-text-muted)", fontSize: "0.75rem", marginBottom: "0.4rem", cursor: "pointer", fontWeight: 300 }}>
-                    {link}
-                  </div>
-                ))}
+            {col.links.map(link => (
+              <div key={link} style={{ color: "var(--c-text-muted)", fontSize: "0.85rem", marginBottom: "0.5rem", cursor: "pointer", fontWeight: 300 }}>
+                {link}
               </div>
             ))}
           </div>
-        ) : (
-          [
-            { title: "Platform", links: ["Technology", "API Docs", "Integrations", "Security"] },
-            { title: "Company", links: ["About", "Careers", "Blog", "Contact"] },
-            { title: "Legal", links: ["Privacy", "Terms", "Cookies", "GDPR"] },
-          ].map(col => (
-            <div key={col.title}>
-              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", letterSpacing: "0.2em", marginBottom: "1rem" }}>
-                {col.title}
-              </div>
-              {col.links.map(link => (
-                <div key={link} style={{ color: "var(--c-text-muted)", fontSize: "0.85rem", marginBottom: "0.5rem", cursor: "pointer", fontWeight: 300 }}>
-                  {link}
-                </div>
-              ))}
-            </div>
-          ))
-        )}
+        ))}
       </div>
       <div style={{
         borderTop: "1px solid var(--c-border)",
@@ -1696,8 +1554,7 @@ const Footer = () => {
       </div>
     </div>
   </footer>
-  );
-};
+);
 
 // ─── LOADING SCREEN ───────────────────────────────────────────────────────────
 const LoadingScreen = ({ onComplete }) => {
