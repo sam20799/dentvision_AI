@@ -487,6 +487,33 @@ const ScanScene = ({ scanProgress }) => {
   );
 };
 
+// ─── LIGHTWEIGHT MOBILE CAR SCENE (no shadows/env/reflectors) ────────────────
+const LightCarScene = ({ color = "#111827", spin = true, scanProgress = 0 }) => {
+  const groupRef = useRef();
+  useFrame((state) => {
+    if (groupRef.current && spin && (!scanProgress || scanProgress >= 1)) {
+      groupRef.current.rotation.y = state.clock.elapsedTime * 0.15;
+    }
+  });
+  return (
+    <>
+      <ambientLight intensity={0.4} />
+      <pointLight position={[3, 3, 3]} color="#3B8BEB" intensity={2} />
+      <pointLight position={[-2, 1, -2]} color="#00D4FF" intensity={0.8} />
+      <group ref={groupRef}>
+        <CarBody color={color} scanProgress={scanProgress} damageZones={scanProgress > 0.7 ? [
+          { position: [1.1, 0.2, 0.5] },
+          { position: [-0.8, 0.1, -0.55] },
+        ] : []} />
+      </group>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.45, 0]}>
+        <planeGeometry args={[10, 10]} />
+        <meshStandardMaterial color="#030508" metalness={0.5} roughness={0.8} />
+      </mesh>
+    </>
+  );
+};
+
 // ─── SCAN OVERLAY EFFECT ──────────────────────────────────────────────────────
 const ScanOverlay = ({ isScanning }) => {
   if (!isScanning) return null;
@@ -607,15 +634,15 @@ const HeroSection = ({ onAnalyze }) => {
           </Canvas>
         </div>
       )}
-      {/* Mobile: lightweight gradient background */}
+      {/* Mobile: lightweight 3D car (no shadows/env/reflectors) */}
       {isMobile && (
-        <div style={{
-          position: "absolute", inset: 0, zIndex: 0,
-          background: `
-            radial-gradient(ellipse 120% 70% at 80% 30%, rgba(59,139,235,0.18) 0%, transparent 60%),
-            radial-gradient(ellipse 60% 40% at 20% 70%, rgba(0,212,255,0.1) 0%, transparent 50%)
-          `,
-        }} />
+        <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
+          <Canvas camera={{ position: [0, 1.5, 5], fov: 45 }}>
+            <Suspense fallback={null}>
+              <LightCarScene color="#0A0F1E" spin />
+            </Suspense>
+          </Canvas>
+        </div>
       )}
 
       {/* Gradient vignette */}
@@ -886,20 +913,11 @@ const { scrollYProgress } = useScroll({
                 </Suspense>
               </Canvas>
             ) : (
-              <div style={{
-                height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-                background: "radial-gradient(ellipse 80% 60% at 50% 50%, rgba(59,139,235,0.1) 0%, transparent 70%)",
-                flexDirection: "column", gap: 12,
-              }}>
-                <motion.div style={{ fontSize: "3rem", color: "var(--c-blue)" }}
-                  animate={{ y: [-4, 4, -4], rotate: [-2, 2, -2] }}
-                  transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}>
-                  ◈
-                </motion.div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.15em" }}>
-                  VEHICLE SCAN READY
-                </div>
-              </div>
+              <Canvas camera={{ position: [0, 1.2, 4.5], fov: 50 }}>
+                <Suspense fallback={null}>
+                  <LightCarScene color="#111827" spin />
+                </Suspense>
+              </Canvas>
             )}
             <ScanOverlay isScanning={false} />
           </div>
@@ -921,33 +939,26 @@ const { scrollYProgress } = useScroll({
                 </Suspense>
               </Canvas>
             ) : (
-              <div style={{
-                height: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-                background: "radial-gradient(ellipse 80% 60% at 50% 50%, rgba(0,212,255,0.08) 0%, transparent 70%)",
-                position: "relative", overflow: "hidden",
-              }}>
-                {/* CSS scan line for mobile */}
+              <>
+                <Canvas camera={{ position: [0, 1.2, 4.5], fov: 50 }}>
+                  <Suspense fallback={null}>
+                    <LightCarScene color="#111827" spin scanProgress={scanProgress} />
+                  </Suspense>
+                </Canvas>
+                {/* Scan line overlay — position: absolute + top: 0 required for animation */}
                 {scanProgress > 0 && scanProgress < 1 && (
-                  <motion.div style={{
-                    position: "absolute", left: 0, right: 0, height: 2,
-                    background: "linear-gradient(90deg, transparent, var(--c-cyan), transparent)",
-                    boxShadow: "0 0 12px var(--c-cyan)",
-                  }}
+                  <motion.div
+                    style={{
+                      position: "absolute", top: 0, left: 0, right: 0, height: 2,
+                      background: "linear-gradient(90deg, transparent, var(--c-cyan), transparent)",
+                      boxShadow: "0 0 12px var(--c-cyan)",
+                      zIndex: 5, pointerEvents: "none",
+                    }}
                     animate={{ top: ["0%", "100%"] }}
                     transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
                   />
                 )}
-                <motion.div style={{ textAlign: "center" }}>
-                  <motion.div style={{ fontSize: "3.5rem", color: "var(--c-cyan)" }}
-                    animate={{ opacity: scanProgress > 0 && scanProgress < 1 ? [0.4, 1, 0.4] : 1 }}
-                    transition={{ duration: 1, repeat: Infinity }}>
-                    ◉
-                  </motion.div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-cyan)", letterSpacing: "0.15em", marginTop: 8 }}>
-                    {scanProgress > 0 && scanProgress < 1 ? `SCANNING ${Math.round(scanProgress * 100)}%` : scanProgress >= 1 ? "SCAN COMPLETE" : "AI READY"}
-                  </div>
-                </motion.div>
-              </div>
+              </>
             )}
             <ScanOverlay isScanning={!isMobile && scanProgress > 0 && scanProgress < 1} />
             <DataOverlay visible={showDataOverlay} />
