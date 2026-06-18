@@ -1191,117 +1191,298 @@ const { scrollYProgress } = useScroll({
   );
 };
 
-// ─── UPLOAD SECTION ───────────────────────────────────────────────────────────
-const UploadSection = ({ sectionRef }) => {
-  const [dragOver, setDragOver] = useState(false);
-  const [file, setFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [scanning, setScanning] = useState(false);
-  const [results, setResults] = useState(null);
-  const [error, setError] = useState(null);
-  const [scanStage, setScanStage] = useState(0);
-  const fileInputRef = useRef();
-  const isMobile = useWindowWidth() < 768;
-
-  const handleFile = (f) => {
-    if (!f || !f.type.startsWith("image/")) return;
-    setFile(f);
-    setResults(null);
-    setError(null);
-    const reader = new FileReader();
-    reader.onload = (e) => setPreview(e.target.result);
-    reader.readAsDataURL(f);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setDragOver(false);
-    const f = e.dataTransfer.files[0];
-    handleFile(f);
-  };
-
-  const analyze = async () => {
-    if (!file) return;
-    setScanning(true);
-    setResults(null);
-    setError(null);
-    setScanStage(0);
-
-    const stages = ["Initializing neural network...", "Parsing image structure...", "Running damage classifier...", "Computing confidence scores..."];
-    for (let i = 0; i < stages.length; i++) {
-      await new Promise(r => setTimeout(r, 600));
-      setScanStage(i + 1);
-    }
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/predict`, {method: "POST",body: formData});
-      if (!response.ok) throw new Error(`Server error ${response.status}`);
-      const data = await response.json();
-      setResults(data);
-    } catch (err) {
-      // Demo fallback when no backend
-      const demoClasses = ["F_Breakage", "F_Crushed", "F_Normal", "R_Breakage", "R_Crushed", "R_Normal"];
-      const picked = demoClasses[Math.floor(Math.random() * demoClasses.length)];
-      setResults({
-        class: picked,
-        confidence: (Math.random() * 0.2 + 0.78).toFixed(3),
-        all_scores: demoClasses.reduce((acc, c) => {
-          acc[c] = parseFloat((Math.random() * 0.15 + (c === picked ? 0.78 : 0.02)).toFixed(3));
-          return acc;
-        }, {}),
-        demo: true,
-      });
-    } finally {
-      setScanning(false);
-    }
-  };
-
+// ─── UPLOAD SECTION HELPERS ───────────────────────────────────────────────────
 const getClassColor = (cls = "") => {
   const value = String(cls || "");
-
   if (value.includes("Normal")) return "var(--c-cyan)";
   if (value.includes("Crushed")) return "#FFB344";
   if (value.includes("Breakage")) return "#FF4444";
-
   return "var(--c-blue)";
 };
 
 const getClassIcon = (cls = "") => {
   const value = String(cls || "");
-
   if (value.includes("F_")) return "Front Zone";
   if (value.includes("R_")) return "Rear Zone";
-
   return "◉";
 };
 
 const getSeverity = (cls = "") => {
   const value = String(cls || "");
-
   if (value.includes("Crushed")) return "MODERATE";
   if (value.includes("Breakage")) return "CRITICAL";
   if (value.includes("Normal")) return "NONE";
-
   return "UNKNOWN";
 };
 
-  const scanMessages = [
-    "Initializing neural network...",
-    "Parsing image structure...",
-    "Running damage classifier...",
-    "Computing confidence scores...",
-  ];
+const classLabel = (cls = "") =>
+  String(cls || "")
+    .replace("F_Normal", "NO DAMAGE DETECTED")
+    .replace("F_Breakage", "FRONT IMPACT · BREAKAGE")
+    .replace("F_Crushed", "FRONT IMPACT · CRUSHED")
+    .replace("R_Normal", "NO DAMAGE DETECTED")
+    .replace("R_Breakage", "REAR IMPACT · BREAKAGE")
+    .replace("R_Crushed", "REAR IMPACT · CRUSHED");
+
+// ─── RESULT CARD ──────────────────────────────────────────────────────────────
+const ResultCard = ({ item, onRemove }) => {
+  const { preview, status, result } = item;
+  const isScanning = status === "scanning";
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      style={{
+        border: `1px solid ${result ? "rgba(59,139,235,0.25)" : "rgba(255,255,255,0.08)"}`,
+        background: result ? "rgba(59,139,235,0.03)" : "rgba(255,255,255,0.02)",
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      {/* Top accent */}
+      {result && (
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0, height: 2,
+          background: `linear-gradient(90deg, transparent, ${getClassColor(result.class)}, transparent)`,
+        }} />
+      )}
+
+      {/* Remove button */}
+      {!isScanning && (
+        <button
+          onClick={onRemove}
+          style={{
+            position: "absolute", top: 8, right: 8, zIndex: 10,
+            background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.12)",
+            color: "var(--c-text-dim)", cursor: "pointer",
+            width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "0.7rem",
+          }}
+        >
+          ✕
+        </button>
+      )}
+
+      {/* Thumbnail */}
+      <div style={{ position: "relative", overflow: "hidden" }}>
+        <img
+          src={preview}
+          alt="Vehicle"
+          style={{
+            width: "100%", height: 180, objectFit: "cover",
+            filter: isScanning ? "brightness(0.35) saturate(0.2)" : "brightness(1)",
+            transition: "filter 0.4s",
+            display: "block",
+          }}
+        />
+        {isScanning && (
+          <>
+            <motion.div
+              style={{
+                position: "absolute", left: 0, right: 0, height: 2, top: 0,
+                background: "linear-gradient(90deg, transparent, var(--c-cyan), transparent)",
+                boxShadow: "0 0 12px var(--c-cyan)",
+              }}
+              animate={{ top: ["0%", "100%"] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
+            />
+            <div style={{
+              position: "absolute", inset: 0, display: "flex",
+              alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8,
+            }}>
+              <div style={{ fontFamily: "var(--font-display)", fontSize: "1.4rem", color: "var(--c-cyan)" }}>
+                ANALYZING
+              </div>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[0, 1, 2, 3].map(i => (
+                  <motion.div
+                    key={i}
+                    style={{ width: 6, height: 6, background: "var(--c-cyan)", opacity: 0.3 }}
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }}
+                  />
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Pending label */}
+      {status === "pending" && (
+        <div style={{ padding: "0.6rem 0.75rem" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.1em" }}>
+            READY TO ANALYZE
+          </div>
+        </div>
+      )}
+
+      {/* Result content */}
+      {result && (
+        <div style={{ padding: "1rem" }}>
+          {result.demo && (
+            <div style={{
+              fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "var(--c-gold)",
+              letterSpacing: "0.12em", marginBottom: "0.75rem",
+              padding: "3px 8px", border: "1px solid rgba(200,148,58,0.2)",
+              display: "inline-block",
+            }}>
+              DEMO MODE
+            </div>
+          )}
+
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", marginBottom: 2 }}>
+            {getClassIcon(result.class)}
+          </div>
+          <div style={{
+            fontFamily: "var(--font-display)", fontSize: "1.25rem",
+            color: getClassColor(result.class),
+            lineHeight: 1.1, letterSpacing: "0.04em", marginBottom: "0.4rem",
+          }}>
+            {classLabel(result.class)}
+          </div>
+          <div style={{
+            display: "flex", gap: "1rem", marginBottom: "0.75rem",
+            fontFamily: "var(--font-mono)", fontSize: "0.6rem",
+            color: "var(--c-text-muted)", letterSpacing: "0.08em", flexWrap: "wrap",
+          }}>
+            <span>CONF: <span style={{ color: getClassColor(result.class) }}>{(result.confidence * 100).toFixed(1)}%</span></span>
+            <span>SEV: <span style={{ color: getClassColor(result.class) }}>{getSeverity(result.class)}</span></span>
+          </div>
+
+          {result.all_scores && (
+            <div>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.55rem", color: "var(--c-text-dim)", letterSpacing: "0.15em", marginBottom: "0.5rem" }}>
+                ALL CLASS PROBABILITIES
+              </div>
+              {Object.entries(result.all_scores)
+                .sort(([, a], [, b]) => b - a)
+                .map(([cls, score], i) => (
+                  <div key={cls} style={{ marginBottom: 6 }}>
+                    <div style={{
+                      display: "flex", justifyContent: "space-between",
+                      fontFamily: "var(--font-mono)", fontSize: "0.55rem",
+                      color: cls === result.class ? getClassColor(cls) : "var(--c-text-dim)",
+                      marginBottom: 2, letterSpacing: "0.04em",
+                    }}>
+                      <span>{cls}</span>
+                      <span>{(score * 100).toFixed(1)}%</span>
+                    </div>
+                    <div style={{ height: 2, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.min(score * 100, 100)}%` }}
+                        transition={{ duration: 0.7, delay: 0.1 + i * 0.06, ease: [0.16, 1, 0.3, 1] }}
+                        style={{
+                          height: "100%",
+                          background: cls === result.class ? getClassColor(cls) : "rgba(255,255,255,0.12)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+
+          <div style={{
+            marginTop: "0.75rem", padding: "0.6rem 0.75rem",
+            background: "rgba(0,0,0,0.3)",
+            borderLeft: `2px solid ${getClassColor(result.class)}`,
+          }}>
+            <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.5rem", color: "var(--c-text-dim)", letterSpacing: "0.12em", marginBottom: 2 }}>AI RECOMMENDATION</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--c-text-muted)", lineHeight: 1.5 }}>
+              {result.class?.includes("Normal")
+                ? "Vehicle appears structurally intact."
+                : result.class?.includes("Crushed")
+                  ? "Significant structural damage. Immediate assessment recommended."
+                  : "Panel breakage identified. Workshop evaluation advised."}
+            </div>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+};
+
+// ─── UPLOAD SECTION ───────────────────────────────────────────────────────────
+const UploadSection = ({ sectionRef }) => {
+  const [items, setItems] = useState([]);
+  const [scanning, setScanning] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef();
+  const isMobile = useWindowWidth() < 768;
+
+  const handleFiles = (fileList) => {
+    Array.from(fileList)
+      .filter(f => f.type.startsWith("image/"))
+      .forEach(f => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setItems(prev => [...prev, { id, file: f, preview: e.target.result, status: "pending", result: null }]);
+        };
+        reader.readAsDataURL(f);
+      });
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    handleFiles(e.dataTransfer.files);
+  };
+
+  const removeItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+  const clearAll = () => setItems([]);
+
+  const runOne = async (item) => {
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "scanning" } : i));
+    const demoClasses = ["F_Breakage", "F_Crushed", "F_Normal", "R_Breakage", "R_Crushed", "R_Normal"];
+    try {
+      const formData = new FormData();
+      formData.append("file", item.file);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/predict`, { method: "POST", body: formData });
+      if (!response.ok) throw new Error(`Server error ${response.status}`);
+      const data = await response.json();
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: "done", result: data } : i));
+    } catch {
+      const picked = demoClasses[Math.floor(Math.random() * demoClasses.length)];
+      setItems(prev => prev.map(i => i.id === item.id ? {
+        ...i, status: "done",
+        result: {
+          class: picked,
+          confidence: parseFloat((Math.random() * 0.2 + 0.78).toFixed(3)),
+          all_scores: demoClasses.reduce((acc, c) => {
+            acc[c] = parseFloat((Math.random() * 0.15 + (c === picked ? 0.78 : 0.02)).toFixed(3));
+            return acc;
+          }, {}),
+          demo: true,
+        },
+      } : i));
+    }
+  };
+
+  const analyze = async () => {
+    const pending = items.filter(i => i.status === "pending");
+    if (!pending.length || scanning) return;
+    setScanning(true);
+    await Promise.all(pending.map(runOne));
+    setScanning(false);
+  };
+
+  const pendingCount = items.filter(i => i.status === "pending").length;
+  const doneCount = items.filter(i => i.status === "done").length;
 
   return (
     <section ref={sectionRef} style={{ padding: isMobile ? "6vh 5vw 10vh" : "10vh 5vw", position: "relative", minHeight: "100vh" }}>
       <GridBackground opacity={0.3} />
       <ParticleField />
 
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 1000, margin: "0 auto" }}>
-        <div style={{ textAlign: "center", marginBottom: "4rem" }}>
+      <div style={{ position: "relative", zIndex: 1, maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: "3rem" }}>
           <div className="section-label" style={{ marginBottom: "1rem" }}>◈ DAMAGE ANALYSIS TERMINAL</div>
           <h2 style={{
             fontFamily: "var(--font-display)",
@@ -1310,288 +1491,131 @@ const getSeverity = (cls = "") => {
           }}>UPLOAD & ANALYZE</h2>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: preview && results && !isMobile ? "1fr 1fr" : "1fr", gap: "2rem" }}>
-          {/* Upload zone */}
+        {/* Dropzone */}
+        <motion.div
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          animate={{
+            borderColor: dragOver ? "rgba(0,212,255,0.6)" : "rgba(255,255,255,0.1)",
+            background: dragOver ? "rgba(0,212,255,0.05)" : "rgba(255,255,255,0.02)",
+          }}
+          style={{
+            border: "1px solid rgba(255,255,255,0.1)",
+            padding: isMobile ? "2rem 1.5rem" : "2.5rem 2rem",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", position: "relative", overflow: "hidden",
+            marginBottom: "1.5rem",
+            transition: "border-color 0.3s, background 0.3s",
+          }}
+        >
+          {[["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].map(([v, h], i) => (
+            <div key={i} style={{
+              position: "absolute", [v]: 8, [h]: 8, width: 16, height: 16,
+              borderTop: v === "top" ? "2px solid var(--c-cyan)" : "none",
+              borderBottom: v === "bottom" ? "2px solid var(--c-cyan)" : "none",
+              borderLeft: h === "left" ? "2px solid var(--c-cyan)" : "none",
+              borderRight: h === "right" ? "2px solid var(--c-cyan)" : "none",
+              opacity: 0.5,
+            }} />
+          ))}
           <motion.div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => !preview && fileInputRef.current?.click()}
-            animate={{
-              borderColor: dragOver ? "rgba(0,212,255,0.6)" : preview ? "rgba(59,139,235,0.3)" : "rgba(255,255,255,0.1)",
-              background: dragOver ? "rgba(0,212,255,0.05)" : "rgba(255,255,255,0.02)",
-            }}
-            style={{
-              border: "1px solid rgba(255,255,255,0.1)",
-              padding: preview ? "1.5rem" : "4rem 2rem",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              cursor: preview ? "default" : "pointer",
-              position: "relative",
-              overflow: "hidden",
-              minHeight: isMobile ? (preview ? 180 : 200) : 280,
-              transition: "border-color 0.3s, background 0.3s",
-            }}
+            style={{ fontSize: "3rem", marginBottom: "0.75rem", color: "var(--c-text-dim)" }}
+            animate={{ y: [0, -6, 0] }}
+            transition={{ duration: 3, repeat: Infinity }}
           >
-            {/* Corner markers */}
-            {[["top", "left"], ["top", "right"], ["bottom", "left"], ["bottom", "right"]].map(([v, h], i) => (
-              <div key={i} style={{
-                position: "absolute",
-                [v]: 8, [h]: 8,
-                width: 16, height: 16,
-                borderTop: v === "top" ? "2px solid var(--c-cyan)" : "none",
-                borderBottom: v === "bottom" ? "2px solid var(--c-cyan)" : "none",
-                borderLeft: h === "left" ? "2px solid var(--c-cyan)" : "none",
-                borderRight: h === "right" ? "2px solid var(--c-cyan)" : "none",
-                opacity: 0.5,
-              }} />
-            ))}
-
-            {preview ? (
-              <>
-                <img
-                  src={preview}
-                  alt="Vehicle preview"
-                  style={{
-                    maxWidth: "100%", maxHeight: isMobile ? 200 : 320,
-                    objectFit: "contain",
-                    filter: scanning ? "brightness(0.5) saturate(0.3)" : "brightness(1)",
-                    transition: "filter 0.5s",
-                  }}
-                />
-                {scanning && (
-                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                    <motion.div
-                      style={{ position: "absolute", left: 0, right: 0, height: 2, background: "linear-gradient(90deg, transparent, var(--c-cyan), transparent)" }}
-                      animate={{ top: ["0%", "100%"] }}
-                      transition={{ duration: 1.2, repeat: Infinity, ease: "linear" }}
-                    />
-                    <div style={{ zIndex: 1, textAlign: "center" }}>
-                      <div style={{ fontFamily: "var(--font-display)", fontSize: "2rem", color: "var(--c-cyan)", marginBottom: 12 }}>
-                        ANALYZING
-                      </div>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--c-text-muted)" }}>
-                        {scanMessages[Math.min(scanStage - 1, 3)] || "Processing..."}
-                      </div>
-                      <div style={{ display: "flex", gap: 4, justifyContent: "center", marginTop: 12 }}>
-                        {Array.from({ length: 4 }, (_, i) => (
-                          <motion.div
-                            key={i}
-                            style={{ width: 8, height: 8, background: i < scanStage ? "var(--c-cyan)" : "rgba(255,255,255,0.1)" }}
-                            animate={i < scanStage ? { opacity: [1, 0.5, 1] } : {}}
-                            transition={{ duration: 0.8, repeat: Infinity }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: "1rem", marginTop: "1rem", flexWrap: "wrap", justifyContent: "center" }}>
-                  {!scanning && !results && (
-                    <motion.button
-                      className="btn-primary"
-                      onClick={analyze}
-                      whileHover={{ scale: 1.03 }}
-                      whileTap={{ scale: 0.97 }}
-                    >
-                      ▷ Run AI Analysis
-                    </motion.button>
-                  )}
-                  <button
-                    className="btn-ghost"
-                    onClick={() => { setFile(null); setPreview(null); setResults(null); }}
-                    style={{ fontSize: "0.8rem" }}
-                  >
-                    ↺ New Image
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <motion.div
-                  style={{ fontSize: "4rem", marginBottom: "1.5rem", color: "var(--c-text-dim)" }}
-                  animate={{ y: [0, -8, 0] }}
-                  transition={{ duration: 3, repeat: Infinity }}
-                >
-                  ⬆
-                </motion.div>
-                <div style={{ fontFamily: "var(--font-display)", fontSize: "1.5rem", letterSpacing: "0.1em", marginBottom: "0.5rem" }}>
-                  DROP VEHICLE IMAGE
-                </div>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.7rem", color: "var(--c-text-dim)", letterSpacing: "0.15em" }}>
-                  OR CLICK TO BROWSE
-                </div>
-                <div style={{
-                  marginTop: "2rem", padding: "8px 20px",
-                  border: "1px solid var(--c-border)",
-                  fontFamily: "var(--font-mono)", fontSize: "0.65rem",
-                  color: "var(--c-text-dim)", letterSpacing: "0.15em",
-                }}>
-                  JPG · PNG · WEBP · HEIC · MAX 20MB
-                </div>
-              </>
-            )}
+            ⬆
           </motion.div>
+          <div style={{ fontFamily: "var(--font-display)", fontSize: "1.3rem", letterSpacing: "0.1em", marginBottom: "0.3rem" }}>
+            DROP VEHICLE IMAGES
+          </div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", letterSpacing: "0.15em", marginBottom: "0.75rem" }}>
+            OR CLICK TO BROWSE — SELECT MULTIPLE
+          </div>
+          <div style={{
+            padding: "4px 16px", border: "1px solid var(--c-border)",
+            fontFamily: "var(--font-mono)", fontSize: "0.6rem",
+            color: "var(--c-text-dim)", letterSpacing: "0.12em",
+          }}>
+            JPG · PNG · WEBP · HEIC · MAX 20MB EACH
+          </div>
+          {items.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              style={{ marginTop: "0.75rem", fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-cyan)", letterSpacing: "0.1em" }}
+            >
+              {items.length} image{items.length !== 1 ? "s" : ""} loaded — click or drop to add more
+            </motion.div>
+          )}
+        </motion.div>
 
-          {/* Results */}
-          <AnimatePresence>
-            {results && (
-              <motion.div
-                initial={{ opacity: 0, x: 40 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 40 }}
-                transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                style={{
-                  border: "1px solid rgba(59,139,235,0.2)",
-                  background: "rgba(59,139,235,0.03)",
-                  padding: "2rem",
-                  position: "relative",
-                  overflow: "hidden",
-                }}
+        {/* Action bar */}
+        <AnimatePresence>
+          {items.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              style={{ display: "flex", gap: "1rem", marginBottom: "2rem", flexWrap: "wrap", alignItems: "center" }}
+            >
+              <motion.button
+                className="btn-primary"
+                onClick={analyze}
+                disabled={pendingCount === 0 || scanning}
+                whileHover={pendingCount > 0 && !scanning ? { scale: 1.02 } : {}}
+                whileTap={pendingCount > 0 && !scanning ? { scale: 0.98 } : {}}
+                style={{ opacity: pendingCount === 0 || scanning ? 0.45 : 1, cursor: pendingCount === 0 || scanning ? "not-allowed" : "pointer" }}
               >
-                {/* Top accent */}
-                <div style={{
-                  position: "absolute", top: 0, left: 0, right: 0, height: 2,
-                  background: `linear-gradient(90deg, transparent, ${getClassColor(results.class)}, transparent)`,
-                }} />
+                {scanning ? "◈ ANALYZING..." : `▷ Run AI Analysis${pendingCount > 0 ? ` (${pendingCount})` : ""}`}
+              </motion.button>
+              <button
+                className="btn-ghost"
+                onClick={clearAll}
+                disabled={scanning}
+                style={{ opacity: scanning ? 0.4 : 1, fontSize: "0.8rem" }}
+              >
+                ↺ Clear All
+              </button>
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.1em", marginLeft: "auto" }}>
+                {doneCount}/{items.length} COMPLETE
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-                {results.demo && (
-                  <div style={{
-                    fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-gold)",
-                    letterSpacing: "0.15em", marginBottom: "1.5rem",
-                    padding: "4px 12px", border: "1px solid rgba(200,148,58,0.2)",
-                    display: "inline-block",
-                  }}>
-                    DEMO MODE — CONNECT BACKEND FOR LIVE RESULTS
-                  </div>
-                )}
-
-                <div className="section-label" style={{ marginBottom: "0.5rem" }}>
-                  CLASSIFICATION RESULT
-                </div>
-
-                {/* Main class */}
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                >
-                  <div style={{
-                    fontFamily: "var(--font-mono)", fontSize: "0.7rem",
-                    color: "var(--c-text-dim)", marginBottom: 4,
-                    letterSpacing: "0.1em",
-                  }}>{getClassIcon(results.class)}</div>
-                  <div style={{
-                    fontFamily: "var(--font-display)",
-                    fontSize: isMobile ? "clamp(1.6rem, 7vw, 2.4rem)" : "3rem",
-                    color: getClassColor(results.class),
-                    lineHeight: 1,
-                    letterSpacing: "0.05em",
-                    marginBottom: "0.5rem",
-                    wordBreak: "break-word",
-                  }}>
-                   {results.class
-                      .replace("F_Normal", "NO DAMAGE DETECTED")
-                      .replace("F_Breakage", "FRONT IMPACT · BREAKAGE")
-                      .replace("F_Crushed", "FRONT IMPACT · CRUSHED")
-                      .replace("R_Normal", "NO DAMAGE DETECTED")
-                      .replace("R_Breakage", "REAR IMPACT · BREAKAGE")
-                      .replace("R_Crushed", "REAR IMPACT · CRUSHED")
-                    }
-                  </div>
-                  <div style={{
-                    display: "flex", gap: "1.5rem", marginBottom: "2rem",
-                    flexWrap: "wrap",
-                    fontFamily: "var(--font-mono)", fontSize: "0.7rem",
-                    color: "var(--c-text-muted)", letterSpacing: "0.1em",
-                  }}>
-                    <span>CONFIDENCE: <span style={{ color: getClassColor(results.class) }}>{(results.confidence * 100).toFixed(1)}%</span></span>
-                    <span>SEVERITY: <span style={{ color: getClassColor(results.class) }}>{getSeverity(results.class)}</span></span>
-                  </div>
-                </motion.div>
-
-                {/* All scores */}
-                {results.all_scores && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.4 }}
-                  >
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.65rem", color: "var(--c-text-dim)", letterSpacing: "0.15em", marginBottom: "1rem" }}>
-                      ALL CLASS PROBABILITIES
-                    </div>
-                    {Object.entries(results.all_scores)
-                      .sort(([, a], [, b]) => b - a)
-                      .map(([cls, score], i) => (
-                        <motion.div
-                          key={cls}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.5 + i * 0.08 }}
-                          style={{ marginBottom: 10 }}
-                        >
-                          <div style={{
-                            display: "flex", justifyContent: "space-between",
-                            fontFamily: "var(--font-mono)", fontSize: "0.65rem",
-                            color: cls === results.class ? getClassColor(cls) : "var(--c-text-dim)",
-                            marginBottom: 4, letterSpacing: "0.05em",
-                          }}>
-                            <span>{cls}</span>
-                            <span>{(score * 100).toFixed(1)}%</span>
-                          </div>
-                          <div style={{ height: 3, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
-                            <motion.div
-                              initial={{ width: 0 }}
-                              animate={{ width: `${Math.min(score * 100, 100)}%` }}
-                              transition={{ duration: 0.8, delay: 0.6 + i * 0.08, ease: [0.16, 1, 0.3, 1] }}
-                              style={{
-                                height: "100%",
-                                background: cls === results.class
-                                  ? getClassColor(cls)
-                                  : "rgba(255,255,255,0.15)",
-                              }}
-                            />
-                          </div>
-                        </motion.div>
-                      ))}
-                  </motion.div>
-                )}
-
-                {/* Recommendation */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 1.2 }}
-                  style={{
-                    marginTop: "1.5rem",
-                    padding: "1rem",
-                    background: "rgba(0,0,0,0.3)",
-                    borderLeft: `3px solid ${getClassColor(results.class)}`,
-                  }}
-                >
-                  <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.15em", marginBottom: 4 }}>AI RECOMMENDATION</div>
-                  <div style={{ fontSize: "0.85rem", color: "var(--c-text-muted)", lineHeight: 1.6 }}>
-                    {results?.class?.includes("Normal")
-                      ? "Vehicle appears structurally intact. Cosmetic assessment may still be warranted."
-                      : results?.class?.includes("Crushed")
-                        ? "Significant structural damage detected. Immediate professional assessment recommended."
-                        : "Panel breakage identified. Workshop evaluation and repair estimate advised."}
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {/* Results grid */}
+        <AnimatePresence>
+          {items.length > 0 && (
+            <motion.div
+              style={{
+                display: "grid",
+                gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(320px, 1fr))",
+                gap: "1.5rem",
+              }}
+            >
+              <AnimatePresence>
+                {items.map(item => (
+                  <ResultCard
+                    key={item.id}
+                    item={item}
+                    onRemove={() => removeItem(item.id)}
+                  />
+                ))}
+              </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        multiple
         style={{ display: "none" }}
-        onChange={(e) => handleFile(e.target.files[0])}
+        onChange={(e) => handleFiles(e.target.files)}
       />
     </section>
   );
