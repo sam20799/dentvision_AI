@@ -27,6 +27,14 @@ class carClassifierResnet(nn.Module):
     def forward(self, x):
         return self.network(x)
 
+def _load_model():
+    global trained_model
+    if trained_model is None:
+        trained_model = carClassifierResnet()
+        print("Loading model from:", model_path)
+        trained_model.load_state_dict(torch.load(model_path, map_location="cpu"))
+        print("Model loaded successfully")
+
 def predict(image_path):
     image = Image.open(image_path).convert("RGB")
     transform = transforms.Compose([
@@ -38,10 +46,7 @@ def predict(image_path):
     image_tensor = transform(image).unsqueeze(0)
 
     global trained_model
-    if trained_model is None:
-        trained_model = carClassifierResnet()
-        print("Current working directory:", os.getcwd())
-        trained_model.load_state_dict(torch.load(model_path,map_location="cpu"))
+    _load_model()
 
     trained_model.eval()
     with torch.no_grad():

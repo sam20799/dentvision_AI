@@ -2,3 +2,6 @@
 **/dist/
 .vite/
 **.env.local
+**.env.development.local
+backend/.env
+backend/dentvision-ai/.env

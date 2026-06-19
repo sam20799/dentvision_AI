@@ -1473,6 +1473,43 @@ const UploadSection = ({ sectionRef }) => {
     setScanning(false);
   };
 
+  const [sendState, setSendState] = useState("idle"); // idle | sending | sent | error
+
+  const compressToBase64 = (file) => new Promise((resolve, reject) => {
+    const canvas = document.createElement("canvas");
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 900 / Math.max(img.width, img.height));
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.78).split(",")[1]);
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+
+  const sendReport = async () => {
+    const done = items.filter(i => i.status === "done" && i.result);
+    if (!done.length || sendState === "sending") return;
+    setSendState("sending");
+    try {
+      const images = await Promise.all(done.map(item => compressToBase64(item.file)));
+      const response = await fetch("/api/send-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images, results: done.map(i => i.result) }),
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      setSendState("sent");
+    } catch {
+      setSendState("error");
+    } finally {
+      setTimeout(() => setSendState("idle"), 4000);
+    }
+  };
+
   const pendingCount = items.filter(i => i.status === "pending").length;
   const doneCount = items.filter(i => i.status === "done").length;
 
@@ -1578,6 +1615,27 @@ const UploadSection = ({ sectionRef }) => {
               >
                 ↺ Clear All
               </button>
+              <motion.button
+                className="btn-primary"
+                onClick={sendReport}
+                disabled={doneCount === 0 || scanning || sendState === "sending"}
+                whileHover={doneCount > 0 && !scanning && sendState === "idle" ? { scale: 1.02 } : {}}
+                whileTap={doneCount > 0 && !scanning && sendState === "idle" ? { scale: 0.98 } : {}}
+                style={{
+                  opacity: doneCount === 0 || scanning || sendState === "sending" ? 0.45 : 1,
+                  cursor: doneCount === 0 || scanning || sendState === "sending" ? "not-allowed" : "pointer",
+                  background: sendState === "sent"
+                    ? "linear-gradient(135deg, #00a86b 0%, #007a50 100%)"
+                    : sendState === "error"
+                      ? "linear-gradient(135deg, #cc3333 0%, #991111 100%)"
+                      : undefined,
+                }}
+              >
+                {sendState === "sending" ? "◈ SENDING..."
+                  : sendState === "sent" ? "✓ SENT TO INBOX"
+                  : sendState === "error" ? "⚠ FAILED — RETRY"
+                  : "✉ Send Report"}
+              </motion.button>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.1em", marginLeft: "auto" }}>
                 {doneCount}/{items.length} COMPLETE
               </div>
