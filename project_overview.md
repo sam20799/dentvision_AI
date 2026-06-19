@@ -9,12 +9,14 @@ AI-powered vehicle damage detection platform. Upload car images and get instant 
 ```
 dentvision_AI/
 ├── frontend/          → React + Vite (deployed on Vercel)
+│   └── api/           → Vercel serverless functions
+│       └── send-report.js  → PDF generation + Gmail email
 ├── backend/           → FastAPI + PyTorch (deployed on Hugging Face Spaces)
 │   └── dentvision-ai/ → HF Spaces git repo (canonical deploy)
 └── project_overview.md
 ```
 
-**Data flow:**
+**Analysis flow:**
 ```
 User uploads image(s)
        ↓
@@ -31,6 +33,22 @@ ResNet50 inference (~300ms, CPU)
 Frontend renders animated results
 ```
 
+**Email report flow:**
+```
+User clicks "Send Report"
+       ↓
+Browser compresses images → base64 JSON
+       ↓
+POST /api/send-report (Vercel serverless function)
+       ↓
+pdf-lib generates PDF (cover page + per-image pages)
+       ↓
+nodemailer → Gmail SMTP → Owner's inbox
+```
+
+> HF Spaces blocks outbound SMTP/HTTPS to email APIs — email sending runs on
+> Vercel instead, which has no network restrictions.
+
 ---
 
 ## Tech Stack
@@ -42,7 +60,9 @@ Frontend renders animated results
 | Animations | Framer Motion, GSAP |
 | Backend | FastAPI, Uvicorn |
 | ML Model | PyTorch, ResNet50 (transfer learning) |
-| Frontend Deploy | Vercel |
+| PDF Generation | pdf-lib (Vercel serverless, Node.js) |
+| Email Delivery | nodemailer + Gmail SMTP (Vercel serverless) |
+| Frontend Deploy | Vercel (with serverless API functions) |
 | Backend Deploy | Hugging Face Spaces (Docker) |
 
 ---
@@ -81,6 +101,7 @@ Frontend renders animated results
 
 ## API
 
+**HF Spaces — Damage Analysis**
 ```
 POST /predict
 Content-Type: multipart/form-data
@@ -99,6 +120,18 @@ Response:
     "R_Normal": 0.003
   }
 }
+```
+
+**Vercel — Email Report**
+```
+POST /api/send-report
+Content-Type: application/json
+Body: {
+  "images": ["<base64>", ...],   // JPEG compressed, max 900px
+  "results": [{ class, confidence, all_scores }, ...]
+}
+
+Response: { "status": "sent", "count": 2 }
 ```
 
 ---
@@ -122,6 +155,27 @@ Response:
 - Mobile hamburger menu with animated open/close
 - Fixed animation overlaps on small screens
 - Scroll indicator and scene numbers scale down on mobile
+
+### v1.3 — Email Report (`feature/email-report`)
+
+**New feature: Send Report**
+- "✉ Send Report" button in the action bar — sends a full PDF damage report to the owner's inbox
+- Button has 4 states: idle → sending → sent → error, with auto-reset after 4s
+- PDF generated server-side via `pdf-lib` (Vercel serverless function):
+  - Cover page with summary table (class, confidence, severity per image)
+  - Per-image pages: embedded photo, score bars for all 6 classes, recommendation text
+- Email sent via `nodemailer` + Gmail SMTP (app password auth)
+- Images compressed to base64 (max 900px, JPEG 78%) in the browser before upload — keeps payload small
+- Email sending runs on **Vercel** (not HF Spaces) to avoid HF outbound network restrictions
+
+**Environment variables required (Vercel dashboard):**
+| Variable | Purpose |
+|----------|---------|
+| `GMAIL_USER` | Gmail address used as sender |
+| `GMAIL_APP_PASSWORD` | 16-char Google App Password |
+| `REPORT_RECIPIENT` | Inbox that receives the report |
+
+---
 
 ### v1.2 — Multi-Image Analysis + Backend Fixes (`feature/multi-image-damage-report`)
 
@@ -164,6 +218,17 @@ uvicorn server:app --reload --port 8000
 # frontend/.env.local
 VITE_API_URL=http://localhost:8000    # local backend
 # VITE_API_URL=https://SHUBHAM2K-dentvision-ai.hf.space  # production
+
+# frontend/.env.development.local  (for vercel dev — email function)
+GMAIL_USER=your-gmail@gmail.com
+GMAIL_APP_PASSWORD=xxxxxxxxxxxxxxxxxxxx
+REPORT_RECIPIENT=recipient@gmail.com
+```
+
+**To test email locally (requires Vercel CLI):**
+```bash
+cd frontend
+npx vercel dev    # runs Vite + /api/* functions together
 ```
 
 ---
