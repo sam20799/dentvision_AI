@@ -138,6 +138,37 @@ Response: { "status": "sent", "count": 2 }
 
 ## Changelog
 
+### v1.5 — Mobile 3D Parity + UI Polish (`feature/ui-improvements`)
+
+**Full garage on mobile**
+- `HeroVehicleLite` deleted; single `HeroVehicleScene` renders the full cinematic garage on both desktop and mobile via a `lowPerf` prop
+- `GarageEnvironment` wrapped in `React.memo` — ~120 meshes skip reconciliation on every stage/sceneReady state change (biggest mobile perf win)
+- `memo` added to React import
+
+**Mobile shadow strategy (smoothness-first)**
+- Desktop: directional light with `castShadow` + `shadow-mapSize [1024,1024]` unchanged
+- Mobile (`lowPerf=true`): directional light kept for identical specular/brightness, `castShadow` removed; replaced with a baked `<ContactShadows frames={1}>` under the parked Supra — zero per-frame GPU cost, visually identical from hero camera angles
+- Canvas `shadows` prop made constant (was `!isMobile`) — prevents renderer reconfiguration on resize
+
+**Mobile camera — portrait FOV fix**
+- `HeroCarController` accepts `lowPerf` prop; sets `camera.fov = 62` on mobile (vs 55 desktop) via `useEffect` on mount — widens the ~30° portrait horizontal FOV to ~37°
+- Inspection/scan/damage/component camera positions pulled back for mobile (`PARK_Z + 5.0` vs `+2.5`, `PARK_X + 2.8` vs `+3.5`, slightly higher Y) so the full car fits in the portrait viewport
+- All desktop camera positions unchanged
+
+**Mobile damage annotation cards**
+- `MOBILE_DAMAGE_ANCHORS`: 4 positions clustered on the near-camera face of the door panel (all at `PARK_Z + 1.1`), spread only in Y — all project near the portrait viewport centre regardless of camera angle (desktop anchors span 4.1m in X, clips on portrait's narrow horizontal FOV)
+- `DamageAnnotations` accepts `lowPerf`; on mobile shows only **2 cards** (Dent + Scratch) to avoid overcrowding; card padding/minWidth tightened to `132px`
+
+**Mobile inspection report strip (stage 5)**
+- Mobile: **2-row compact list** — `◈ LABEL | SEVERITY BADGE | ESTIMATE` per row; no confidence number, no bar, no TOTAL/AVG CONF summary
+- Desktop: full 4-column layout with CONF bars + TOTAL/AVG CONF unchanged
+- Summary stats stagger delay corrected for 2-item mobile list
+
+**Resize seamlessness**
+- Crossing 768px mid-session now only flips the `lowPerf` prop — no scene subtree unmount, no Suspense re-resolution, no `SceneReadySignal` re-fire, no flash
+
+---
+
 ### v1.4 — 3D Garage Hero Redesign (`feature/ui-improvements`)
 
 **New: Scroll-driven single-vehicle garage hero**
