@@ -236,15 +236,18 @@ const GlobalStyle = () => (
 // ─── PARTICLE FIELD ───────────────────────────────────────────────────────────
 const ParticleField = () => {
   const width = useWindowWidth();
-  const count = width < 768 ? 20 : 60;
-  const particles = Array.from({ length: count }, (_, i) => ({
+  const isMobile = width < 768;
+  // Mobile: 8 particles, transform-only animation (no opacity — opacity forces repaints on Android)
+  // Desktop: 40 particles with full animation
+  const count = isMobile ? 8 : 40;
+  const particles = useMemo(() => Array.from({ length: count }, (_, i) => ({
     id: i,
     x: Math.random() * 100,
     y: Math.random() * 100,
     size: Math.random() * 2 + 0.5,
     duration: Math.random() * 8 + 4,
     delay: Math.random() * 6,
-  }));
+  })), [count]);
 
   return (
     <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
@@ -258,13 +261,14 @@ const ParticleField = () => {
             width: p.size,
             height: p.size,
             borderRadius: "50%",
+            opacity: isMobile ? 0.4 : undefined,
             background: p.id % 3 === 0 ? "var(--c-cyan)" : p.id % 3 === 1 ? "var(--c-blue)" : "rgba(255,255,255,0.4)",
+            willChange: "transform",
           }}
-          animate={{
-            y: [0, -30, 0],
-            opacity: [0.2, 0.7, 0.2],
-            scale: [1, 1.5, 1],
-          }}
+          animate={isMobile
+            ? { y: [0, -20, 0] }
+            : { y: [0, -30, 0], opacity: [0.2, 0.7, 0.2], scale: [1, 1.5, 1] }
+          }
           transition={{
             duration: p.duration,
             delay: p.delay,
@@ -289,7 +293,6 @@ const GridBackground = ({ opacity = 1 }) => (
         linear-gradient(90deg, rgba(59,139,235,0.06) 1px, transparent 1px)
       `,
       backgroundSize: "60px 60px",
-      animation: "grid-shift 4s linear infinite",
     }} />
     <div style={{
       position: "absolute", inset: 0, pointerEvents: "none",
@@ -1620,10 +1623,11 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
         zIndex: 5,
         background: "#0e1012",
-        visibility: heroActive ? "visible" : "hidden",
+        display: heroActive ? "block" : "none",
         pointerEvents: heroActive ? "auto" : "none",
       }}>
         <Canvas
+          frameloop={heroActive ? "always" : "never"}
           shadows
           dpr={isMobile ? [1, 1.0] : [1, 1.5]}
           camera={{ position: [-1, 2.0, 3], fov: 55 }}
@@ -1969,7 +1973,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
 const StoryScene = ({ number, label, children, align = "left" }) => {
   const ref = useRef();
   const isMobile = useWindowWidth() < 768;
-  const inView = useInView(ref, { threshold: 0.05, once: false });
+  const inView = useInView(ref, { threshold: 0.05, once: true });
 
   return (
     <motion.div
@@ -2671,11 +2675,11 @@ const Navigation = ({ onAnalyze }) => {
         style={{
           position: "fixed", top: 0, left: 0, right: 0,
           zIndex: 100, background: bg,
-          borderBottom: "1px solid transparent",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
           padding: "0 5vw",
           display: "flex", alignItems: "center", justifyContent: "space-between",
           height: 64,
-          backdropFilter: "blur(20px)",
+          willChange: "transform",
         }}
       >
         <div style={{
