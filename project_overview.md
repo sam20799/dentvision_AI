@@ -142,12 +142,30 @@ Response: { "status": "sent", "count": 2 }
 
 **New: Scroll-driven single-vehicle garage hero**
 - Replaced the multi-car showroom with a focused single-vehicle hero (Toyota Supra MK4 GLB)
-- 5-stage auto-sequence driven by scroll + internal timer (no manual scroll required after car parks):
+- 4-stage auto-sequence driven by scroll + internal timer (no manual scroll required after car parks):
   1. **Entrance** — car drives in from off-screen left with suspension bob, wheel rotation, and headlight glow
   2. **Zoom-in** — camera lerps to inspection angle once car parks at `rawP = 0.45`
   3. **AI Scan** — emissive scan beam sweeps the car's bounding box length; scan overlay effect
-  4. **Inspection Complete** — stage 5 inspection report reveals bottom-strip damage findings (staggered per item, 0.5s apart)
-  5. **Swipe hint** — "SWIPE UP TO CONTINUE" double-chevron hint appears after report is fully revealed; one user scroll gesture triggers smooth exit to next section
+  4. **Damage Detection** — 4 floating callout cards reveal one-by-one (1.2s each, sequential) at 3D world-space anchors on the car: Dent · Scratch · Paint Damage · Bumper Scuff, each showing confidence score, severity badge, and repair estimate
+  5. **Inspection Complete** — stage 5 inspection report reveals bottom-strip damage findings (staggered per item, 0.5s apart)
+  6. **Swipe hint** — "SWIPE UP TO CONTINUE" double-chevron hint appears after report is fully revealed; one user scroll gesture triggers smooth exit to next section
+
+**3D floating damage annotations (stage 3)**
+- 4 callout cards anchored to world-space positions on the parked car via drei `<Html>`
+- Sequential reveal: one card at a time using Framer Motion `useMotionValue` driven by `useFrame` — no React re-renders during animation
+- Each card: 250ms fade-in + 700ms hold + 250ms fade-out (1200ms total); total stage = 4.8s
+- Cards colour-coded by severity (HIGH = red, MED = amber, LOW = blue)
+- Anchor heights spread across a wide vertical range so projected screen positions never overlap
+- To swap damage data: edit `HERO_SUPRA.damage` and `DAMAGE_ANCHORS` in `App.jsx`
+
+**Auto-sequence timeline**
+
+| Segment | Duration | p range |
+|---------|----------|---------|
+| Zoom-in | 1.8 s | 0.45 → 0.62 |
+| AI Scan | 1.2 s | 0.62 → 0.77 |
+| Damage callouts (4 × 1.2s) | 4.8 s | 0.77 → 0.93 |
+| Inspection complete | 1.0 s | 0.93 → 1.00 |
 
 **Garage environment**
 - Full 3D inspection garage: structural columns, walls, floor, LED screen, tool cabinet, EV charger, monitor, gate posts
@@ -167,6 +185,7 @@ Response: { "status": "sent", "count": 2 }
 - Fixed hero canvas not collapsing over Damage Classification: hero height + 30vh ScrollStory buffer ensure section content is well below viewport top when canvas first fades
 - Fixed full-page click/upload blocker: `pointer-events: none` does NOT cascade to children in HTML (unlike SVG) — added it explicitly to `GridBackground`'s inner child divs and to the R3F `<Canvas>` element, both of which had `position: absolute, inset: 0` covering the entire page with default `pointer-events: auto`
 - `StoryScene` `useInView` threshold lowered from 0.2 → 0.05 so scene reveal animations trigger as soon as the section enters the viewport
+- Fixed Paint Damage callout card clipping: world-space Y=2.65 projected outside viewport from inspection camera; lowered to Y=1.45 so card renders in the upper-mid screen region
 
 ---
 

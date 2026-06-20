@@ -1,8 +1,8 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
-import { motion, useScroll, useTransform, useSpring, AnimatePresence, useInView } from "framer-motion";
+import { motion, useScroll, useTransform, useSpring, useMotionValue, AnimatePresence, useInView } from "framer-motion";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Float, MeshReflectorMaterial, ContactShadows, Sphere, Box, Torus, Cylinder, useGLTF, Text } from "@react-three/drei";
+import { Environment, Float, MeshReflectorMaterial, ContactShadows, Sphere, Box, Torus, Cylinder, useGLTF, Text, Html } from "@react-three/drei";
 import { clone as cloneScene } from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as THREE from "three";
 
@@ -309,6 +309,7 @@ const HERO_SUPRA = {
     { label: "Dent", confidence: "0.91", severity: "HIGH", estimate: "~$380" },
     { label: "Scratch", confidence: "0.74", severity: "MED", estimate: "~$120" },
     { label: "Paint Damage", confidence: "0.67", severity: "LOW", estimate: "~$95" },
+    { label: "Bumper Scuff", confidence: "0.79", severity: "MED", estimate: "~$160" },
   ],
   components: [
     { label: "Front Bumper", desc: "Minor scuffs detected" },
@@ -326,6 +327,24 @@ const PARK_Z  = -9;   // fixed garage depth
 const PARK_X  =  1.5; // final X after driving in
 const START_X = -12;  // off-screen left
 const WHEEL_R =  0.32; // wheel radius at 1.61m car height scale
+
+// Severity → colour mapping used by callout cards
+const SEV_COLOR = { HIGH: "#ff6b6b", MED: "#c8943a", LOW: "#6bcfff" };
+
+// World-space anchor points on the parked car (PARK_X=1.5, PARK_Z=-9)
+// Car faces +X after rotation: length along X, width along Z, height along Y
+const DAMAGE_ANCHORS = [
+  [PARK_X + 0.30,  1.80,  PARK_Z + 0.95],  // driver door  (Dent)         — mid-high
+  [PARK_X - 1.55,  0.10,  PARK_Z + 0.95],  // rear fender  (Scratch)      — near ground
+  [PARK_X + 1.90,  1.45,  PARK_Z + 0.50],  // hood         (Paint Damage)  — mid height
+  [PARK_X + 2.60,  1.20,  PARK_Z + 0.55],  // front bumper (Bumper Scuff)  — front mid
+];
+const COMPONENT_ANCHORS = [
+  [PARK_X + 2.20,  0.05,  PARK_Z + 0.50],  // front bumper — ground level
+  [PARK_X + 0.25,  1.60,  PARK_Z + 1.10],  // driver door  — mid-high
+  [PARK_X + 1.25,  2.70,  PARK_Z - 0.10],  // hood         — well above car
+  [PARK_X - 1.55,  0.65,  PARK_Z + 0.85],  // rear fender  — low-mid
+];
 
 const HeroVehicle = ({ scrollProgressRef, scanProgressRef }) => {
   const { scene } = useGLTF(HERO_SUPRA.url);
@@ -1045,8 +1064,136 @@ const HeroCarController = ({ scrollProgressRef }) => {
   return null;
 };
 
+// ─── DAMAGE CALLOUT ANNOTATIONS (stage 3) ────────────────────────────────────
+// Sequential reveal: one card at a time, driven by useMotionValue (no React re-renders).
+// Each card gets CARD_MS ms: FADE in → hold → FADE out. Cards don't overlap.
+const DamageAnnotations = ({ stageRef }) => {
+  const CARD_MS = 1200, FADE = 250;
+  const op0 = useMotionValue(0), op1 = useMotionValue(0), op2 = useMotionValue(0), op3 = useMotionValue(0);
+  const ops = [op0, op1, op2, op3];
+  const y0 = useTransform(op0, [0, 1], [12, 0]);
+  const y1 = useTransform(op1, [0, 1], [12, 0]);
+  const y2 = useTransform(op2, [0, 1], [12, 0]);
+  const y3 = useTransform(op3, [0, 1], [12, 0]);
+  const ys = [y0, y1, y2, y3];
+  const t0 = useRef(null);
+
+  useFrame(() => {
+    const s = stageRef.current;
+    if (s === 3) {
+      const now = performance.now();
+      if (t0.current === null) t0.current = now;
+      const el = now - t0.current;
+      ops.forEach((op, i) => {
+        const t = el - i * CARD_MS;
+        if (t < 0 || t > CARD_MS) { op.set(0); return; }
+        if (t < FADE)             { op.set(t / FADE); return; }
+        if (t < CARD_MS - FADE)   { op.set(1); return; }
+        op.set(1 - (t - (CARD_MS - FADE)) / FADE);
+      });
+    } else if (t0.current !== null) {
+      t0.current = null;
+      ops.forEach(o => o.set(0));
+    }
+  });
+
+  return HERO_SUPRA.damage.map((d, i) => (
+    <Html key={i} position={DAMAGE_ANCHORS[i]} center style={{ pointerEvents: "none" }}>
+      <motion.div
+        style={{
+          opacity: ops[i], y: ys[i],
+          fontFamily: "'Share Tech Mono', monospace",
+          pointerEvents: "none", userSelect: "none",
+          position: "relative",
+          background: "rgba(4,6,14,0.92)",
+          border: `1px solid ${SEV_COLOR[d.severity]}55`,
+          padding: "7px 10px 8px",
+          minWidth: 152,
+        }}
+      >
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: SEV_COLOR[d.severity] }} />
+        <div style={{ fontSize: 9, color: "#00D4FF", letterSpacing: "0.15em", marginBottom: 5 }}>
+          ◈ {d.label.toUpperCase()} DETECTED
+        </div>
+        <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+          <span style={{ color: "rgba(232,237,242,0.4)", fontSize: 9 }}>CONF</span>
+          <span style={{ color: "#fff", fontSize: 11 }}>{d.confidence}</span>
+          <span style={{ color: SEV_COLOR[d.severity], background: `${SEV_COLOR[d.severity]}1a`, padding: "1px 5px", fontSize: 9 }}>
+            {d.severity}
+          </span>
+          <span style={{ color: "#3ddc84", marginLeft: "auto", fontSize: 11 }}>{d.estimate}</span>
+        </div>
+        <div style={{
+          position: "absolute", bottom: -9, left: "50%", transform: "translateX(-50%)",
+          width: 6, height: 6, borderRadius: "50%",
+          background: SEV_COLOR[d.severity],
+          boxShadow: `0 0 8px ${SEV_COLOR[d.severity]}`,
+        }} />
+      </motion.div>
+    </Html>
+  ));
+};
+
+// ─── COMPONENT LABEL ANNOTATIONS (stage 4) ───────────────────────────────────
+const ComponentAnnotations = ({ stageRef }) => {
+  const CARD_MS = 1200, FADE = 250;
+  const op0 = useMotionValue(0), op1 = useMotionValue(0);
+  const op2 = useMotionValue(0), op3 = useMotionValue(0);
+  const ops = [op0, op1, op2, op3];
+  const x0 = useTransform(op0, [0, 1], [-10, 0]);
+  const x1 = useTransform(op1, [0, 1], [-10, 0]);
+  const x2 = useTransform(op2, [0, 1], [-10, 0]);
+  const x3 = useTransform(op3, [0, 1], [-10, 0]);
+  const xs = [x0, x1, x2, x3];
+  const t0 = useRef(null);
+
+  useFrame(() => {
+    const s = stageRef.current;
+    if (s === 4) {
+      const now = performance.now();
+      if (t0.current === null) t0.current = now;
+      const el = now - t0.current;
+      ops.forEach((op, i) => {
+        const t = el - i * CARD_MS;
+        if (t < 0 || t > CARD_MS) { op.set(0); return; }
+        if (t < FADE)             { op.set(t / FADE); return; }
+        if (t < CARD_MS - FADE)   { op.set(1); return; }
+        op.set(1 - (t - (CARD_MS - FADE)) / FADE);
+      });
+    } else if (t0.current !== null) {
+      t0.current = null;
+      ops.forEach(o => o.set(0));
+    }
+  });
+
+  return HERO_SUPRA.components.map((c, i) => (
+    <Html key={i} position={COMPONENT_ANCHORS[i]} center style={{ pointerEvents: "none" }}>
+      <motion.div
+        style={{
+          opacity: ops[i], x: xs[i],
+          fontFamily: "'Share Tech Mono', monospace",
+          pointerEvents: "none", userSelect: "none",
+          background: "rgba(4,6,14,0.85)",
+          border: "1px solid rgba(0,212,255,0.22)",
+          borderLeft: "2px solid #00D4FF",
+          padding: "5px 10px",
+          minWidth: 138,
+          display: "flex", flexDirection: "column", gap: 3,
+        }}
+      >
+        <div style={{ fontSize: 10, color: "#00D4FF", letterSpacing: "0.1em" }}>
+          {c.label.toUpperCase()}
+        </div>
+        <div style={{ fontSize: 9, color: "rgba(232,237,242,0.5)", letterSpacing: "0.03em" }}>
+          {c.desc}
+        </div>
+      </motion.div>
+    </Html>
+  ));
+};
+
 // ─── HERO VEHICLE SCENE (desktop) ─────────────────────────────────────────────
-const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef }) => (
+const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef }) => (
   <>
     <color attach="background" args={["#0e1012"]} />
     <fog attach="fog" args={["#0e1012", 30, 56]} />
@@ -1060,12 +1207,13 @@ const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef }) => (
     <GarageEnvironment />
     {/* Car self-positions via HeroVehicle's outerRef — no wrapper group needed */}
     <HeroVehicle scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
+    <DamageAnnotations stageRef={stageRef} />
     <HeroCarController scrollProgressRef={scrollProgressRef} />
   </>
 );
 
 // ─── HERO VEHICLE LITE (mobile — no reflector, lighter env) ───────────────────
-const HeroVehicleLite = ({ scrollProgressRef, scanProgressRef }) => (
+const HeroVehicleLite = ({ scrollProgressRef, scanProgressRef, stageRef }) => (
   <>
     <color attach="background" args={["#0e1012"]} />
     <fog attach="fog" args={["#0e1012", 20, 42]} />
@@ -1080,6 +1228,7 @@ const HeroVehicleLite = ({ scrollProgressRef, scanProgressRef }) => (
     </mesh>
 
     <HeroVehicle scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
+    <DamageAnnotations stageRef={stageRef} />
     <HeroCarController scrollProgressRef={scrollProgressRef} />
   </>
 );
@@ -1127,13 +1276,14 @@ const HeroSection = ({ onAnalyze }) => {
     // ── Auto-sequence piecewise timeline ──
     //      0→1800 ms : p 0.45→0.62  zoom-in    1.8 s
     //   1800→3000 ms : p 0.62→0.77  scan       1.2 s
-    //   3000→3800 ms : p 0.77→0.87  damage     0.8 s
-    //   3800→4400 ms : p 0.87→0.93  components 0.6 s
-    //   4400→5200 ms : p 0.93→1.00  zoom-out   0.8 s
+    //   3000→6600 ms : p 0.77→0.87  damage     3.6 s  (3 cards × 1200 ms each)
+    //   3000→7800 ms : p 0.77→0.93  damage     4.8 s  (4 cards × 1200 ms each)
+    //   7800→8800 ms : p 0.93→1.00  complete   1.0 s
     const SEGS = [
-      { end: 1800, pStart: 0.45, pEnd: 0.62 },  // zoom-in   1.8 s
-      { end: 3000, pStart: 0.62, pEnd: 0.77 },  // scan      1.2 s
-      { end: 3800, pStart: 0.77, pEnd: 1.00 },  // complete  0.8 s (jump straight to stage 5)
+      { end: 1800, pStart: 0.45, pEnd: 0.62 },  // zoom-in  1.8 s
+      { end: 3000, pStart: 0.62, pEnd: 0.77 },  // scan     1.2 s
+      { end: 7800, pStart: 0.77, pEnd: 0.93 },  // damage   4.8 s
+      { end: 8800, pStart: 0.93, pEnd: 1.00 },  // complete 1.0 s
     ];
     const startAutoSequence = () => {
       if (autoSeqRef.current.tick) return;
@@ -1147,7 +1297,7 @@ const HeroSection = ({ onAnalyze }) => {
         const newP = seg.pStart + (seg.pEnd - seg.pStart) * t;
         scrollProgressRef.current = newP;
         scanProgressRef.current   = newP < 0.62 ? 0 : newP > 0.77 ? 1 : (newP - 0.62) / 0.15;
-        const ns = newP < 0.62 ? 1 : newP < 0.77 ? 2 : 5;
+        const ns = newP < 0.62 ? 1 : newP < 0.77 ? 2 : newP < 0.93 ? 3 : 5;
         if (ns !== stageRef.current) { stageRef.current = ns; setStage(ns); }
         if (ms >= SEGS[SEGS.length - 1].end) {
           clearInterval(autoSeqRef.current.tick);
@@ -1244,8 +1394,8 @@ const HeroSection = ({ onAnalyze }) => {
         >
           <Suspense fallback={<color attach="background" args={["#0e1012"]} />}>
             {isMobile
-              ? <HeroVehicleLite scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
-              : <HeroVehicleScene scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
+              ? <HeroVehicleLite scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} />
+              : <HeroVehicleScene scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} />
             }
           </Suspense>
         </Canvas>
