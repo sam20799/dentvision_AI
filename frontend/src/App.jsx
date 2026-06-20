@@ -1625,7 +1625,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
       }}>
         <Canvas
           shadows
-          dpr={isMobile ? [1, 1.2] : [1, 1.5]}
+          dpr={isMobile ? [1, 1.0] : [1, 1.5]}
           camera={{ position: [-1, 2.0, 3], fov: 55 }}
           gl={{ antialias: true, alpha: false }}
           style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
