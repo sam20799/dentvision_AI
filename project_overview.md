@@ -138,6 +138,30 @@ Response: { "status": "sent", "count": 2 }
 
 ## Changelog
 
+### v1.6 — Mobile Hero Touch Architecture (`main`)
+
+**Problem solved: entire page scrolling up during hero sequence**
+- Root cause: hero entrance was scroll-driven (200vh spacer + `onScroll`); a fast swipe could outrun the `overflow:hidden` lock that only fires when car parks at sp=0.45, briefly revealing section 01 underneath the fixed hero div.
+
+**New mobile touch architecture (Android + iOS)**
+- Body `overflow:hidden` applied immediately when hero is active on mobile — spacer can never reveal section 01 regardless of swipe speed
+- Car entrance is now **touch-driven** (swipe delta on `window`) instead of scroll-driven; `onScroll` handler only runs on desktop
+- `touchAction: "none"` on hero fixed div prevents native browser scroll gestures on the canvas
+- Hint text updated: "SWIPE UP TO EXPLORE" on mobile, "SCROLL TO EXPLORE" on desktop
+- `heroActive` added to the scroll/touch `useEffect` deps so body lock re-applies automatically on hero re-activation after chapter wipe
+
+**Root cause fix: swipe up at stage 5 was resetting camera instead of triggering chapter wipe**
+- After `lockScroll()` fires (car parks), `lockHandlers.touchstart` is registered — but the *current* touch gesture already fired `touchstart` before that listener existed, leaving `touchStartYRef.current = 0`
+- `lockHandlers.touchmove` then computed `dy = 0 − currentY ≈ −500`, hit the `dy < −24 && stage !== 5` branch → `cancelSequence()` → camera reset
+- Fix: after `lockScroll()` on mobile, immediately remove `lockHandlers.touchstart` and `lockHandlers.touchmove`; one consolidated `onTouchMove` owns all mobile gestures:
+  - Stage 5 + dy > 15px → `triggerTransition()` (chapter wipe to section 01)
+  - Sequence running + dy < −40px → `cancelSeqRef()` (downward swipe cancel)
+  - Pre-lock → drives car entrance
+- `touchend` backup: catches fast flick swipes at stage 5 that don't accumulate 15px during `touchmove`
+- All listeners use `passive: false` (consistent with `lockHandlers`) to prevent passive/non-passive dispatch conflicts on Android Chrome
+
+---
+
 ### v1.5 — Mobile 3D Parity + UI Polish (`feature/ui-improvements`)
 
 **Full garage on mobile**

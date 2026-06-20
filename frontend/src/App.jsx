@@ -1293,7 +1293,7 @@ const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef, onRead
     }
     <pointLight position={[PARK_X, 4.8, PARK_Z]} intensity={10} color="#f8f4ee" decay={2} />
     <pointLight position={[-5, 3.5, PARK_Z]} intensity={6} color="#f4f0e8" decay={2} />
-    <pointLight position={[0, 4.2, -15]} intensity={5} color="#f4f0e8" decay={2} />
+    {!lowPerf && <pointLight position={[0, 4.2, -15]} intensity={5} color="#f4f0e8" decay={2} />}
     {lowPerf && (
       <ContactShadows position={[PARK_X, 0.02, PARK_Z]} scale={6} blur={2.4}
                       opacity={0.5} far={4} resolution={512} frames={1} color="#000" />
@@ -1309,11 +1309,13 @@ const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef, onRead
       <SceneReadySignal onReady={onReady} />
     </Suspense>
 
-    {/* Parked set-dressing cars — independent async load */}
-    <Suspense fallback={null}>
-      <ParkedCar url={PARKED_LANCIA} position={[-3.5, -15]} targetHeight={1.3} />
-      <ParkedCar url={PARKED_GT40}   position={[3.5, -15]}  targetHeight={1.05} />
-    </Suspense>
+    {/* Parked set-dressing cars — desktop only (mobile skips to save draw calls) */}
+    {!lowPerf && (
+      <Suspense fallback={null}>
+        <ParkedCar url={PARKED_LANCIA} position={[-3.5, -15]} targetHeight={1.3} />
+        <ParkedCar url={PARKED_GT40}   position={[3.5, -15]}  targetHeight={1.05} />
+      </Suspense>
+    )}
   </>
 );
 
@@ -1564,34 +1566,104 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
       }, 16);
     };
 
-    const onScroll = () => {
-      // Once the car parks the page is locked; once the hero is dismissed scroll is free.
-      if (lockedRef.current || !heroActiveRef.current) return;
-      const el = sectionRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      const rawP = Math.max(0, Math.min(1, Math.max(0, -rect.top) / (el.offsetHeight - window.innerHeight)));
-      if (scrollHintRef.current) scrollHintRef.current.style.opacity = rawP < 0.06 ? "1" : "0";
-
-      // Scroll drives the car entrance only — remap rawP(0→1) to p(0→0.45),
-      // car fully parked by rawP ≈ 0.9 (leaves headroom before the spacer bottom).
-      const sp = Math.min(0.45, (rawP / 0.9) * 0.45);
+    const advanceProgress = (sp) => {
       scrollProgressRef.current = sp;
       scanProgressRef.current   = 0;
-      // Once the user scrolls the car back below the park threshold, reset the cancel guard
-      // so the next arrival at 0.45 re-arms the sequence.
       if (sp < 0.44) justCanceledRef.current = false;
+      if (scrollHintRef.current) scrollHintRef.current.style.opacity = sp < 0.06 ? "1" : "0";
       const ns = sp >= 0.45 ? 1 : 0;
       if (ns !== stageRef.current) {
         stageRef.current = ns;
         setStage(ns);
         if (ns === 1 && !justCanceledRef.current) {
-          // Car parked — lock the page so 01 can't be reached, then hand off to the timer.
           autoSeqRef.current.running = true;
           lockScroll();
+          // On mobile, lockHandlers.touchmove uses touchStartYRef which is stale
+          // (the touchstart that drove the car to park fired BEFORE lockHandlers was
+          // registered, so touchStartYRef = 0 → dy = 0 − currentY < −24 → cancel fires).
+          // Our consolidated onTouchMove owns all mobile gestures from here on.
+          if (isMobile) {
+            const h = lockHandlers.current;
+            window.removeEventListener("touchstart", h.touchstart);
+            window.removeEventListener("touchmove",  h.touchmove);
+          }
           setTimeout(startAutoSequence, 600);
         }
       }
+    };
+
+    // ── MOBILE: touch-driven entrance (no page scroll needed) ──
+    // Lock body immediately so the spacer can never reveal section 01 underneath.
+    // The car entrance is driven by swipe delta on the fixed hero div instead.
+    if (isMobile) {
+      if (!heroActive) return; // hero dismissed — no listeners needed
+      document.documentElement.style.overflow = "hidden";
+      document.body.style.overflow = "hidden";
+
+      let touchStartY = 0;
+      let touchBaseP  = 0;
+
+      const onTouchStart = (e) => {
+        if (!heroActiveRef.current) return;
+        touchStartY = e.touches[0].clientY;
+        if (!lockedRef.current) touchBaseP = scrollProgressRef.current;
+      };
+      const onTouchMove = (e) => {
+        if (!heroActiveRef.current) return;
+        e.preventDefault(); // always block native scroll — body is locked but belt+braces
+        const dy = touchStartY - e.touches[0].clientY; // positive = swipe up
+
+        // ── Stage 5: upward swipe → chapter wipe ──
+        if (stageRef.current === 5 && !transitioningRef.current && dy > 15) {
+          triggerTransition();
+          return;
+        }
+
+        // ── During auto-sequence: downward swipe cancels ──
+        // (lockHandlers.touchmove is stripped on mobile after car parks, so we handle this here)
+        if (autoSeqRef.current.running) {
+          if (dy < -40 && stageRef.current !== 5) cancelSeqRef.current?.();
+          return;
+        }
+
+        // ── Entrance (pre-lock): upward swipe drives the car in ──
+        if (!lockedRef.current) {
+          const sp = Math.max(0, Math.min(0.45, touchBaseP + (dy / (window.innerHeight * 0.65)) * 0.45));
+          advanceProgress(sp);
+        }
+      };
+      // touchend: backup stage-5 trigger for short/fast swipes that don't hit the touchmove threshold
+      const onTouchEnd = (e) => {
+        if (!heroActiveRef.current || stageRef.current !== 5 || transitioningRef.current) return;
+        const endY = e.changedTouches[0]?.clientY ?? touchStartY;
+        if (touchStartY - endY > 10) triggerTransition();
+      };
+
+      window.addEventListener("touchstart", onTouchStart, { passive: false });
+      window.addEventListener("touchmove",  onTouchMove,  { passive: false });
+      window.addEventListener("touchend",   onTouchEnd,   { passive: true });
+      window.addEventListener("dv:dismiss-hero", dismissHero);
+      return () => {
+        window.removeEventListener("touchstart", onTouchStart);
+        window.removeEventListener("touchmove",  onTouchMove);
+        window.removeEventListener("touchend",   onTouchEnd);
+        window.removeEventListener("dv:dismiss-hero", dismissHero);
+        document.documentElement.style.overflow = "";
+        document.body.style.overflow = "";
+        if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
+        unlockScroll();
+      };
+    }
+
+    // ── DESKTOP: scroll-driven entrance (spacer provides scroll height) ──
+    const onScroll = () => {
+      if (lockedRef.current || !heroActiveRef.current) return;
+      const el = sectionRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const rawP = Math.max(0, Math.min(1, Math.max(0, -rect.top) / (el.offsetHeight - window.innerHeight)));
+      const sp   = Math.min(0.45, (rawP / 0.9) * 0.45);
+      advanceProgress(sp);
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -1603,7 +1675,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
       if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
       unlockScroll();
     };
-  }, [lockScroll, unlockScroll, dismissHero]);
+  }, [lockScroll, unlockScroll, dismissHero, isMobile, heroActive]);
 
   const watchDemo = useCallback(() => {
     const el = sectionRef.current;
@@ -1625,13 +1697,14 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
         background: "#0e1012",
         display: heroActive ? "block" : "none",
         pointerEvents: heroActive ? "auto" : "none",
+        touchAction: isMobile ? "none" : "auto",
       }}>
         <Canvas
           frameloop={heroActive ? "always" : "never"}
           shadows
           dpr={isMobile ? [1, 1.0] : [1, 1.5]}
           camera={{ position: [-1, 2.0, 3], fov: 55 }}
-          gl={{ antialias: true, alpha: false }}
+          gl={{ antialias: !isMobile, alpha: false }}
           style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
           onCreated={({ gl }) => gl.setClearColor('#0e1012')}
         >
@@ -1946,7 +2019,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
           ref={scrollHintRef}
           style={{ position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, zIndex: 2, transition: "opacity 0.4s", pointerEvents: "none" }}
         >
-          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.2em" }}>SCROLL TO EXPLORE</div>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--c-text-dim)", letterSpacing: "0.2em" }}>{isMobile ? "SWIPE UP TO EXPLORE" : "SCROLL TO EXPLORE"}</div>
           <div style={{ width: 1, height: 40, background: "linear-gradient(var(--c-cyan), transparent)" }} />
         </div>
       </div>
