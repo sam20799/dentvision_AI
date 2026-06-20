@@ -142,21 +142,32 @@ Response: { "status": "sent", "count": 2 }
 
 **New: Scroll-driven single-vehicle garage hero**
 - Replaced the multi-car showroom with a focused single-vehicle hero (Toyota Supra MK4 GLB)
-- 4-stage auto-sequence driven by scroll + internal timer (no manual scroll required after car parks):
+- Auto-sequence triggered once the car parks, driven by a 16 ms interval timer:
   1. **Entrance** — car drives in from off-screen left with suspension bob, wheel rotation, and headlight glow
-  2. **Zoom-in** — camera lerps to inspection angle once car parks at `rawP = 0.45`
-  3. **AI Scan** — emissive scan beam sweeps the car's bounding box length; scan overlay effect
-  4. **Damage Detection** — 4 floating callout cards reveal one-by-one (1.2s each, sequential) at 3D world-space anchors on the car: Dent · Scratch · Paint Damage · Bumper Scuff, each showing confidence score, severity badge, and repair estimate
-  5. **Inspection Complete** — stage 5 inspection report reveals bottom-strip damage findings (staggered per item, 0.5s apart)
-  6. **Swipe hint** — "SWIPE UP TO CONTINUE" double-chevron hint appears after report is fully revealed; one user scroll gesture triggers smooth exit to next section
+  2. **Zoom-in** — camera lerps to inspection angle once car parks
+  3. **AI Scan** — emissive scan beam sweeps the car's bounding box; scan overlay effect
+  4. **Damage Detection** — 4 floating callout cards reveal one-by-one (950 ms each) at 3D world-space anchors: Dent · Scratch · Paint Damage · Bumper Scuff, each with confidence score, severity badge, and repair estimate
+  5. **Inspection Complete** — bottom-strip damage report reveals with staggered items (0.5s apart)
+  6. **Chapter wipe** — "SWIPE UP TO CONTINUE" hint appears; clicking it (or CTA button) triggers a full-screen cinematic chapter transition to section 01
+
+**Chapter transition wipe**
+- `ChapterTransition` component: dark panel sweeps up from the bottom, holds to display "CHAPTER 01 — DAMAGE CLASSIFICATION", then sweeps off the top
+- Triggered by the swipe hint (now a clickable button) or the CTA `dv:dismiss-hero` custom event
+- While the panel covers the screen the hero spacer collapses + page scrolls to `#chapter-01` invisibly — no scroll jerk visible to the user
+- Scroll is locked (`overflow: hidden` on body) from the moment the car parks; unlocked once the chapter wipe exits
+- Scroll-back gesture (wheel/touch/keyboard up at `scrollY=0` while hero is dismissed) re-activates the hero without remounting WebGL
+
+**Parked set-dressing cars (garage fill)**
+- Two static cars parked in the far bays: Lancia (`car-lancia.glb`) and Ford GT40 (`car-ford-gt40.glb`)
+- `ParkedCar` component: loads any GLB, auto-scales to a target real-world height, grounds the model (bottom face at y=0), adds a faint contact-shadow plane, sets `envMapIntensity`/shadows
+- Bay marking positions updated from 4 scattered bays to 2 rear bays at (−3.5, −15) and (3.5, −15)
+- Both GLBs preloaded at module level via `useGLTF.preload`
 
 **3D floating damage annotations (stage 3)**
 - 4 callout cards anchored to world-space positions on the parked car via drei `<Html>`
 - Sequential reveal: one card at a time using Framer Motion `useMotionValue` driven by `useFrame` — no React re-renders during animation
-- Each card: 250ms fade-in + 700ms hold + 250ms fade-out (1200ms total); total stage = 4.8s
+- Each card: 220 ms fade-in + hold + 220 ms fade-out (950 ms total); total stage = 3.8 s
 - Cards colour-coded by severity (HIGH = red, MED = amber, LOW = blue)
-- Anchor heights spread across a wide vertical range so projected screen positions never overlap
-- To swap damage data: edit `HERO_SUPRA.damage` and `DAMAGE_ANCHORS` in `App.jsx`
 
 **Auto-sequence timeline**
 
@@ -164,28 +175,35 @@ Response: { "status": "sent", "count": 2 }
 |---------|----------|---------|
 | Zoom-in | 1.8 s | 0.45 → 0.62 |
 | AI Scan | 1.2 s | 0.62 → 0.77 |
-| Damage callouts (4 × 1.2s) | 4.8 s | 0.77 → 0.93 |
+| Damage callouts (4 × 950 ms) | 3.8 s | 0.77 → 0.93 |
 | Inspection complete | 1.0 s | 0.93 → 1.00 |
 
 **Garage environment**
 - Full 3D inspection garage: structural columns, walls, floor, LED screen, tool cabinet, EV charger, monitor, gate posts
-- Off-white neon rings on car platform (emissiveIntensity tuned down to avoid overpowering car color)
+- Off-white neon rings on car platform (emissiveIntensity tuned to avoid overpowering car colour)
 - LED screen neon frame widened (10.8 m housing) so content doesn't overflow bezels
 - Z-fighting eliminated: all geometry lifted ≥ 0.005 m off y = 0
 
+**Loading / black-screen fixes**
+- Two-phase App loading: content mounts behind the still-visible loading screen (`fakeProgressDone` only), letting WebGL init + shader compilation + GLB parsing happen in parallel with the fake progress bar
+- `SceneReadySignal` R3F component fires `onReady` on the very first rendered frame inside the car `<Suspense>` — loading screen exits only when both fake progress AND scene signal have fired
+- Split `<Suspense>` boundaries: `GarageEnvironment` (pure geometry) renders immediately; `HeroVehicle` + `Environment preset` wait in their own inner boundary — garage is visible while the car GLB streams
+- `onCreated: ({ gl }) => gl.setClearColor('#0e1012')` matches WebGL clear colour to the page background from frame 1, eliminating any black flash before geometry renders
+- Scene-ready overlay (`zIndex: 15`, same colour as loading screen) fades out over 0.7 s once `SceneReadySignal` fires — prevents any visible gap between loading screen exit and scene render
+- Always-mounted Canvas: fixed div toggles `visibility`/`pointerEvents` instead of conditional mount — WebGL context and compiled shaders survive across hero show/hide cycles, eliminating black screen on scroll-back to hero
+
 **Scroll / camera behaviour**
-- Hero section height: **300 vh** — car parks at ~81 vh of scroll, auto-sequence handles the rest
+- Hero section height: **200 vh** — car entrance mapped to full scroll range (0→0.45 over 0→90% of scroll), auto-sequence + page lock handle the rest
 - Camera lerp speeds: fast during zoom-in (0.08), fast on exit (0.09), slow elsewhere (0.038)
-- After sequence: `running = true` kept set so scroll-back to `rawP < 0.3` resets cleanly; scroll-forward by 30 px fires smooth exit to hero end
-- `ScrollStory` gets `paddingTop: 30vh` buffer so Damage Classification content is safely in view when the hero canvas fades
+- `ScrollStory` `paddingTop` reduced from 30 vh → 8 vh; added `id="chapter-01"` anchor
+- `watchDemo` scroll target updated to 0.92× hero height so the full car entrance plays
 
 **Bug fixes**
 - Fixed sequence restart on scroll-back: kept `running = true` after natural completion instead of resetting it
-- Fixed blank space gap after hero: changed `isInView` condition from `rect.bottom > window.innerHeight − 1` to `rect.bottom > 0` so the canvas stays visible through the full hero spacer
-- Fixed hero canvas not collapsing over Damage Classification: hero height + 30vh ScrollStory buffer ensure section content is well below viewport top when canvas first fades
-- Fixed full-page click/upload blocker: `pointer-events: none` does NOT cascade to children in HTML (unlike SVG) — added it explicitly to `GridBackground`'s inner child divs and to the R3F `<Canvas>` element, both of which had `position: absolute, inset: 0` covering the entire page with default `pointer-events: auto`
-- `StoryScene` `useInView` threshold lowered from 0.2 → 0.05 so scene reveal animations trigger as soon as the section enters the viewport
-- Fixed Paint Damage callout card clipping: world-space Y=2.65 projected outside viewport from inspection camera; lowered to Y=1.45 so card renders in the upper-mid screen region
+- Fixed blank space gap after hero: changed `isInView` condition so canvas stays visible through the full hero spacer
+- Fixed full-page click/upload blocker: `pointer-events: none` does NOT cascade in HTML — added it explicitly to `GridBackground` inner divs and the R3F `<Canvas>` element
+- `StoryScene` `useInView` threshold lowered from 0.2 → 0.05 so reveals trigger as soon as the section enters the viewport
+- Fixed Paint Damage callout card clipping: world-space Y lowered from 2.65 → 1.45 so the card renders in the upper-mid screen region
 
 ---
 
