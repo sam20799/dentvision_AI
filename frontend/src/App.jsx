@@ -320,6 +320,12 @@ const HERO_SUPRA = {
 };
 useGLTF.preload(HERO_SUPRA.url);
 
+// Parked set-dressing cars for the two empty bays at the back of the garage
+const PARKED_LANCIA = "/models/car-lancia.glb";
+const PARKED_GT40   = "/models/car-ford-gt40.glb";
+useGLTF.preload(PARKED_LANCIA);
+useGLTF.preload(PARKED_GT40);
+
 // ─── HERO VEHICLE ─────────────────────────────────────────────────────────────
 // Car drives LEFT → RIGHT (+X axis). outerRef moves X. innerRef animates body.
 // Car is wrapped in a -90° Y rotation so its front faces +X (direction of travel).
@@ -493,6 +499,46 @@ const HeroVehicle = ({ scrollProgressRef, scanProgressRef }) => {
   );
 };
 
+// ─── PARKED CAR (static set dressing) ─────────────────────────────────────────
+// Loads a GLB, auto-scales to a realistic height and grounds it (bottom at y=0).
+// Default GLB front faces +Z; rotationY rotates from there.
+// position = [x, z] on the floor. Sits perfectly inside a 2.9×5.5 bay marking.
+const ParkedCar = ({ url, position, rotationY = 0, targetHeight = 1.35 }) => {
+  const { scene } = useGLTF(url);
+
+  const cloned = useMemo(() => {
+    const c = cloneScene(scene);
+    const box = new THREE.Box3().setFromObject(c);
+    const size = box.getSize(new THREE.Vector3());
+    const s = size.y > 0.001 ? targetHeight / size.y : 1;
+    c.scale.setScalar(s);
+    // Re-measure and recentre so the car is grounded (bottom face at y=0)
+    const box2 = new THREE.Box3().setFromObject(c);
+    const center = box2.getCenter(new THREE.Vector3());
+    const size2 = box2.getSize(new THREE.Vector3());
+    c.position.set(-center.x, -center.y + size2.y / 2, -center.z);
+    c.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = o.material.clone();
+      o.material.envMapIntensity = 1.5;
+      o.castShadow = true;
+      o.receiveShadow = true;
+    });
+    return c;
+  }, [scene, targetHeight]);
+
+  return (
+    <group position={[position[0], 0, position[1]]} rotation={[0, rotationY, 0]}>
+      <primitive object={cloned} />
+      {/* Contact shadow — length (5) runs along the bay's Z axis, width (2.3) along X */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]}>
+        <planeGeometry args={[2.3, 5]} />
+        <meshBasicMaterial color="#000" transparent opacity={0.3} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+};
+
 // ─── GARAGE ENVIRONMENT ───────────────────────────────────────────────────────
 const GarageEnvironment = () => {
   const W = 11, H = 5.2, L = 38;
@@ -507,7 +553,7 @@ const GarageEnvironment = () => {
       </mesh>
 
       {/* Bay outline markings — depthWrite=false prevents floor z-fight */}
-      {[[-2.5, -9], [2.5, -9], [-2.5, -17], [2.5, -17]].map(([cx, cz], bi) => (
+      {[[-3.5, -15], [3.5, -15]].map(([cx, cz], bi) => (
         <group key={bi} position={[cx, 0.007, cz]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-1.45, 0, 0]}>
             <planeGeometry args={[0.055, 5.5]} />
@@ -1068,7 +1114,7 @@ const HeroCarController = ({ scrollProgressRef }) => {
 // Sequential reveal: one card at a time, driven by useMotionValue (no React re-renders).
 // Each card gets CARD_MS ms: FADE in → hold → FADE out. Cards don't overlap.
 const DamageAnnotations = ({ stageRef }) => {
-  const CARD_MS = 1200, FADE = 250;
+  const CARD_MS = 950, FADE = 220;
   const op0 = useMotionValue(0), op1 = useMotionValue(0), op2 = useMotionValue(0), op3 = useMotionValue(0);
   const ops = [op0, op1, op2, op3];
   const y0 = useTransform(op0, [0, 1], [12, 0]);
@@ -1136,7 +1182,7 @@ const DamageAnnotations = ({ stageRef }) => {
 
 // ─── COMPONENT LABEL ANNOTATIONS (stage 4) ───────────────────────────────────
 const ComponentAnnotations = ({ stageRef }) => {
-  const CARD_MS = 1200, FADE = 250;
+  const CARD_MS = 950, FADE = 220;
   const op0 = useMotionValue(0), op1 = useMotionValue(0);
   const op2 = useMotionValue(0), op3 = useMotionValue(0);
   const ops = [op0, op1, op2, op3];
@@ -1192,44 +1238,66 @@ const ComponentAnnotations = ({ stageRef }) => {
   ));
 };
 
+// Fires onReady on the very first rendered frame (inside car Suspense boundary).
+const SceneReadySignal = ({ onReady }) => {
+  const firedRef = useRef(false);
+  useFrame(() => {
+    if (!firedRef.current) { firedRef.current = true; onReady?.(); }
+  });
+  return null;
+};
+
 // ─── HERO VEHICLE SCENE (desktop) ─────────────────────────────────────────────
-const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef }) => (
+const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef, onReady }) => (
   <>
+    {/* Renders immediately — no async deps */}
     <color attach="background" args={["#0e1012"]} />
     <fog attach="fog" args={["#0e1012", 30, 56]} />
     <ambientLight intensity={0.45} color="#f0ece4" />
     <directionalLight position={[4, 8, 2]} intensity={1.4} color="#fff8f0" castShadow shadow-mapSize={[1024, 1024]} />
-    {/* Lights cover both the driving lane (left) and the parked position */}
     <pointLight position={[PARK_X, 4.8, PARK_Z]} intensity={10} color="#f8f4ee" decay={2} />
     <pointLight position={[-5, 3.5, PARK_Z]} intensity={6} color="#f4f0e8" decay={2} />
-    <Environment preset="warehouse" environmentIntensity={0.22} />
-
+    <pointLight position={[0, 4.2, -15]} intensity={5} color="#f4f0e8" decay={2} />
     <GarageEnvironment />
-    {/* Car self-positions via HeroVehicle's outerRef — no wrapper group needed */}
-    <HeroVehicle scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
     <DamageAnnotations stageRef={stageRef} />
     <HeroCarController scrollProgressRef={scrollProgressRef} />
+
+    {/* Car + env map load async — garage is already visible while this resolves */}
+    <Suspense fallback={null}>
+      <Environment preset="warehouse" environmentIntensity={0.22} />
+      <HeroVehicle scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
+      <SceneReadySignal onReady={onReady} />
+    </Suspense>
+
+    {/* Parked set-dressing cars — independent async load */}
+    <Suspense fallback={null}>
+      <ParkedCar url={PARKED_LANCIA} position={[-3.5, -15]} targetHeight={1.3} />
+      <ParkedCar url={PARKED_GT40}   position={[3.5, -15]}  targetHeight={1.05} />
+    </Suspense>
   </>
 );
 
 // ─── HERO VEHICLE LITE (mobile — no reflector, lighter env) ───────────────────
-const HeroVehicleLite = ({ scrollProgressRef, scanProgressRef, stageRef }) => (
+const HeroVehicleLite = ({ scrollProgressRef, scanProgressRef, stageRef, onReady }) => (
   <>
+    {/* Renders immediately — no async deps */}
     <color attach="background" args={["#0e1012"]} />
     <fog attach="fog" args={["#0e1012", 20, 42]} />
     <ambientLight intensity={0.5} color="#f0ece4" />
     <pointLight position={[PARK_X, 4.8, PARK_Z]} intensity={8} color="#f8f4ee" decay={2} />
     <pointLight position={[-5, 3.5, PARK_Z]} intensity={4} color="#f4f0e8" decay={2} />
-
-    {/* Matte concrete floor */}
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -15]}>
       <planeGeometry args={[11, 38]} />
       <meshStandardMaterial color="#9a9690" roughness={0.75} metalness={0.02} />
     </mesh>
-
-    <HeroVehicle scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
     <DamageAnnotations stageRef={stageRef} />
     <HeroCarController scrollProgressRef={scrollProgressRef} />
+
+    {/* Car loads async — floor + lights are already visible */}
+    <Suspense fallback={null}>
+      <HeroVehicle scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
+      <SceneReadySignal onReady={onReady} />
+    </Suspense>
   </>
 );
 
@@ -1257,20 +1325,193 @@ const ScanOverlay = ({ isScanning }) => {
 };
 
 // ─── HERO SECTION ─────────────────────────────────────────────────────────────
-const HeroSection = ({ onAnalyze }) => {
-  const [stage, setStage] = useState(0);
-  const [isInView, setIsInView] = useState(true);
+const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
+  const [stage, setStage]             = useState(0);
+  const [heroActive, setHeroActive]   = useState(true);
+  const [transitioning, setTransitioning]     = useState(false);
+  const [transitioningBack, setTransitioningBack] = useState(false);
+  const [sceneReady, setSceneReady]   = useState(false);
   const isMobile = useWindowWidth() < 768;
+
+  // Called by SceneReadySignal on first rendered frame — lifts overlay AND signals App
+  const onSceneReady = useCallback(() => {
+    setSceneReady(true);
+    onSceneReadyProp?.();
+  }, [onSceneReadyProp]);
+
+  // Fallback: reveal after 8s if signal never fires (WebGL error, slow device)
+  useEffect(() => {
+    const t = setTimeout(() => { setSceneReady(true); onSceneReadyProp?.(); }, 8000);
+    return () => clearTimeout(t);
+  }, [onSceneReadyProp]);
 
   const sectionRef        = useRef();
   const scrollProgressRef = useRef(0);
   const scanProgressRef   = useRef(0);
-  const isInViewRef       = useRef(true);
   const stageRef          = useRef(0);
   const scrollHintRef     = useRef();
   const autoSeqRef        = useRef({ running: false, tick: null });
-  // null = not ready; number = scrollY when sequence ended (waiting for user scroll-down)
-  const exitReadyRef      = useRef(null);
+
+  // ── scroll-lock + chapter-transition plumbing ──
+  const heroActiveRef     = useRef(true);   // mirror of heroActive for stable handlers
+  const lockedRef         = useRef(false);  // page scroll currently locked?
+  const lockYRef          = useRef(0);      // scrollY captured at lock time
+  const transitioningRef  = useRef(false);  // guard against double-trigger
+  const touchStartYRef    = useRef(0);
+  const cancelSeqRef      = useRef(null);   // stable ref so lockHandlers (created once) can call latest cancelSequence
+  const justCanceledRef   = useRef(false);  // prevents re-locking immediately after a scroll-back cancel
+
+  // Fire the chapter-changing wipe (idempotent)
+  const triggerTransition = useCallback(() => {
+    if (transitioningRef.current) return;
+    transitioningRef.current = true;
+    setTransitioning(true);
+  }, []);
+
+  // Stable gesture/scroll-block handlers (created once). While the page is locked
+  // these swallow wheel/touch.  At stage 5 they detect the "swipe up" to continue;
+  // any earlier upward gesture cancels the sequence and reverses the car.
+  const lockHandlers = useRef(null);
+  if (!lockHandlers.current) {
+    lockHandlers.current = {
+      wheel: (e) => {
+        e.preventDefault();
+        if (stageRef.current === 5 && !transitioningRef.current && e.deltaY > 8) {
+          triggerTransition();
+        } else if (e.deltaY < -5 && stageRef.current !== 5) {
+          cancelSeqRef.current?.(); // upward scroll → cancel + reverse car
+        }
+      },
+      touchstart: (e) => { touchStartYRef.current = e.touches[0].clientY; },
+      touchmove: (e) => {
+        e.preventDefault();
+        const dy = touchStartYRef.current - e.touches[0].clientY; // +ve = swipe up
+        if (stageRef.current === 5 && !transitioningRef.current && dy > 24) {
+          triggerTransition();
+        } else if (dy < -24 && stageRef.current !== 5) {
+          cancelSeqRef.current?.(); // downward swipe = scrolling up → cancel + reverse car
+        }
+      },
+      key: (e) => {
+        if (stageRef.current === 5 && (e.key === "ArrowDown" || e.key === " " || e.key === "Enter")) {
+          e.preventDefault();
+          triggerTransition();
+        } else if ((e.key === "ArrowUp" || e.key === "PageUp") && stageRef.current !== 5) {
+          cancelSeqRef.current?.();
+        }
+      },
+    };
+  }
+
+  const lockScroll = useCallback(() => {
+    if (lockedRef.current) return;
+    lockedRef.current = true;
+    lockYRef.current = window.scrollY;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    const h = lockHandlers.current;
+    window.addEventListener("wheel", h.wheel, { passive: false });
+    window.addEventListener("touchstart", h.touchstart, { passive: false });
+    window.addEventListener("touchmove", h.touchmove, { passive: false });
+    window.addEventListener("keydown", h.key);
+  }, []);
+
+  const unlockScroll = useCallback(() => {
+    if (!lockedRef.current) return;
+    lockedRef.current = false;
+    document.documentElement.style.overflow = "";
+    document.body.style.overflow = "";
+    const h = lockHandlers.current;
+    window.removeEventListener("wheel", h.wheel);
+    window.removeEventListener("touchstart", h.touchstart);
+    window.removeEventListener("touchmove", h.touchmove);
+    window.removeEventListener("keydown", h.key);
+  }, []);
+
+  // Cancel the running auto-sequence and hand scroll control back to the user
+  // so they can drive the car backward. justCanceledRef prevents immediately
+  // re-locking when onScroll sees sp=0.45 on the next tick.
+  const cancelSequence = useCallback(() => {
+    if (!autoSeqRef.current.running && !lockedRef.current) return;
+    if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
+    autoSeqRef.current.running = false;
+    scanProgressRef.current = 0;
+    scrollProgressRef.current = 0.45; // car sits at park until user scrolls back
+    stageRef.current = 0;
+    setStage(0);
+    justCanceledRef.current = true;
+    unlockScroll();
+  }, [unlockScroll]);
+  // Keep the ref in sync so lockHandlers (created once) always call the latest version
+  cancelSeqRef.current = cancelSequence;
+
+  // Tear the hero down (used by CTAs / nav that need free scroll)
+  const dismissHero = useCallback(() => {
+    if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
+    autoSeqRef.current.running = false;
+    unlockScroll();
+    heroActiveRef.current = false;
+    setHeroActive(false);
+  }, [unlockScroll]);
+
+  // Wipe panel fully covers the screen → unlock + dismiss hero (hidden behind panel).
+  // The spacer unmounts with heroActive, collapsing the page height.
+  // A useEffect (below) scrolls to 0 after the DOM settles — still hidden by the wipe.
+  const handleCovered = useCallback(() => {
+    unlockScroll();
+    heroActiveRef.current = false;
+    setHeroActive(false);
+  }, [unlockScroll]);
+
+  // Wipe panel finished lifting away → unmount the transition
+  const handleTransitionDone = useCallback(() => {
+    transitioningRef.current = false;
+    setTransitioning(false);
+  }, []);
+
+  // After heroActive toggles: scroll to 0. On false→true the overlay covers any
+  // browser scroll-anchor adjustment; on true→false it hides behind the wipe panel.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [heroActive]);
+
+  // When the hero is dismissed, watch for an upward gesture at scrollY=0 (i.e. user
+  // tries to scroll back above section 01) and re-mount the hero fresh.
+  useEffect(() => {
+    if (heroActive) return; // only active while hero is dismissed
+
+    const reactivate = () => {
+      if (heroActiveRef.current) return; // guard
+      if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
+      autoSeqRef.current.running = false;
+      lockedRef.current = false;
+      transitioningRef.current = false;
+      scrollProgressRef.current = 0;
+      scanProgressRef.current   = 0;
+      stageRef.current = 0;
+      heroActiveRef.current = true;
+      setStage(0);
+      setTransitioning(false);
+      setHeroActive(true);
+    };
+
+    let t0Y = 0;
+    const onWheel      = (e) => { if (window.scrollY <= 0 && e.deltaY < -5) reactivate(); };
+    const onTouchStart = (e) => { t0Y = e.touches[0].clientY; };
+    const onTouchMove  = (e) => { if (window.scrollY <= 0 && e.touches[0].clientY - t0Y > 30) reactivate(); };
+    const onKeyDown    = (e) => { if (window.scrollY <= 0 && (e.key === "ArrowUp" || e.key === "PageUp")) reactivate(); };
+
+    window.addEventListener("wheel",      onWheel,      { passive: true });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove",  onTouchMove,  { passive: true });
+    window.addEventListener("keydown",    onKeyDown);
+    return () => {
+      window.removeEventListener("wheel",      onWheel);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove",  onTouchMove);
+      window.removeEventListener("keydown",    onKeyDown);
+    };
+  }, [heroActive]);
 
   useEffect(() => {
     // ── Auto-sequence piecewise timeline ──
@@ -1282,8 +1523,8 @@ const HeroSection = ({ onAnalyze }) => {
     const SEGS = [
       { end: 1800, pStart: 0.45, pEnd: 0.62 },  // zoom-in  1.8 s
       { end: 3000, pStart: 0.62, pEnd: 0.77 },  // scan     1.2 s
-      { end: 7800, pStart: 0.77, pEnd: 0.93 },  // damage   4.8 s
-      { end: 8800, pStart: 0.93, pEnd: 1.00 },  // complete 1.0 s
+      { end: 6800, pStart: 0.77, pEnd: 0.93 },  // damage   3.8 s  (4 × 950 ms)
+      { end: 7800, pStart: 0.93, pEnd: 1.00 },  // complete 1.0 s
     ];
     const startAutoSequence = () => {
       if (autoSeqRef.current.tick) return;
@@ -1302,75 +1543,57 @@ const HeroSection = ({ onAnalyze }) => {
         if (ms >= SEGS[SEGS.length - 1].end) {
           clearInterval(autoSeqRef.current.tick);
           autoSeqRef.current.tick = null;
-          // running=true stays set so scroll-back (rawP < 0.3) still resets properly.
-          // Store current scrollY so onScroll can detect the user swiping up.
-          exitReadyRef.current = window.scrollY;
+          // Sequence committed; page stays locked until the user fires the chapter wipe.
         }
       }, 16);
     };
 
     const onScroll = () => {
+      // Once the car parks the page is locked; once the hero is dismissed scroll is free.
+      if (lockedRef.current || !heroActiveRef.current) return;
       const el = sectionRef.current;
       if (!el) return;
-      const rect   = el.getBoundingClientRect();
-      // Canvas stays visible until the hero spacer is completely scrolled past (rect.bottom hits 0)
-      const active = rect.top < 1 && rect.bottom > 0;
-      if (active !== isInViewRef.current) { isInViewRef.current = active; setIsInView(active); }
-
+      const rect = el.getBoundingClientRect();
       const rawP = Math.max(0, Math.min(1, Math.max(0, -rect.top) / (el.offsetHeight - window.innerHeight)));
       if (scrollHintRef.current) scrollHintRef.current.style.opacity = rawP < 0.06 ? "1" : "0";
 
-      if (autoSeqRef.current.running) {
-        // User scrolled back past the entry point → cancel and reset
-        if (rawP < 0.3) {
-          if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
-          autoSeqRef.current.running = false;
-          exitReadyRef.current = null;
-          scrollProgressRef.current  = rawP;
-          scanProgressRef.current    = 0;
-          stageRef.current = 0;
-          setStage(0);
-          return;
-        }
-        // Report is showing and user swiped up (scrolled down) → exit to next section
-        if (exitReadyRef.current !== null && window.scrollY > exitReadyRef.current + 30) {
-          exitReadyRef.current = null; // prevent re-trigger
-          const el = sectionRef.current;
-          if (el) {
-            window.scrollTo({ top: el.offsetTop + el.offsetHeight, behavior: "smooth" });
-          }
-        }
-        return; // auto-sequence owns scrollProgressRef while running
-      }
-
-      // Scroll drives only the car entrance (p 0→0.45)
-      scrollProgressRef.current = rawP;
+      // Scroll drives the car entrance only — remap rawP(0→1) to p(0→0.45),
+      // car fully parked by rawP ≈ 0.9 (leaves headroom before the spacer bottom).
+      const sp = Math.min(0.45, (rawP / 0.9) * 0.45);
+      scrollProgressRef.current = sp;
       scanProgressRef.current   = 0;
-      const ns = rawP < 0.45 ? 0 : 1;
+      // Once the user scrolls the car back below the park threshold, reset the cancel guard
+      // so the next arrival at 0.45 re-arms the sequence.
+      if (sp < 0.44) justCanceledRef.current = false;
+      const ns = sp >= 0.45 ? 1 : 0;
       if (ns !== stageRef.current) {
         stageRef.current = ns;
         setStage(ns);
-        if (ns === 1) {
-          // Car just parked — start auto-sequence after a short settle delay
+        if (ns === 1 && !justCanceledRef.current) {
+          // Car parked — lock the page so 01 can't be reached, then hand off to the timer.
           autoSeqRef.current.running = true;
+          lockScroll();
           setTimeout(startAutoSequence, 600);
         }
       }
     };
 
     window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("dv:dismiss-hero", dismissHero);
     onScroll();
     return () => {
       window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("dv:dismiss-hero", dismissHero);
       if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
+      unlockScroll();
     };
-  }, []);
+  }, [lockScroll, unlockScroll, dismissHero]);
 
   const watchDemo = useCallback(() => {
     const el = sectionRef.current;
     if (!el) return;
-    // Scroll just past the parking threshold — auto-sequence handles the rest
-    window.scrollTo({ top: el.offsetTop + (el.offsetHeight - window.innerHeight) * 0.46, behavior: "smooth" });
+    // Smooth-scroll to the parking point — the car drives in, then the auto-sequence + lock take over
+    window.scrollTo({ top: el.offsetTop + (el.offsetHeight - window.innerHeight) * 0.92, behavior: "smooth" });
   }, []);
 
   // 0=driving  1=zoom-in  2=scanning  3=damage  4=components  5=garage
@@ -1378,12 +1601,14 @@ const HeroSection = ({ onAnalyze }) => {
 
   return (
     <>
+      {/* Canvas div is ALWAYS mounted so WebGL never re-inits on revisit.
+          visibility + pointerEvents toggle instead of unmounting. */}
       <div style={{
         position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
         zIndex: 5,
-        opacity: isInView ? 1 : 0,
-        pointerEvents: isInView ? "auto" : "none",
-        transition: "opacity 0.25s ease",
+        background: "#0e1012",
+        visibility: heroActive ? "visible" : "hidden",
+        pointerEvents: heroActive ? "auto" : "none",
       }}>
         <Canvas
           shadows={!isMobile}
@@ -1391,14 +1616,28 @@ const HeroSection = ({ onAnalyze }) => {
           camera={{ position: [-1, 2.0, 3], fov: 55 }}
           gl={{ antialias: true, alpha: false }}
           style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+          onCreated={({ gl }) => gl.setClearColor('#0e1012')}
         >
-          <Suspense fallback={<color attach="background" args={["#0e1012"]} />}>
-            {isMobile
-              ? <HeroVehicleLite scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} />
-              : <HeroVehicleScene scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} />
-            }
-          </Suspense>
+          {isMobile
+            ? <HeroVehicleLite scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} onReady={onSceneReady} />
+            : <HeroVehicleScene scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} onReady={onSceneReady} />
+          }
         </Canvas>
+
+        {/* Scene-ready overlay — same colour as the loading screen background.
+            Sits on top of the Canvas until the first real frame fires, then fades out.
+            Prevents any black/blank flash between loading screen exit and scene render. */}
+        <motion.div
+          initial={{ opacity: 1 }}
+          animate={{ opacity: sceneReady ? 0 : 1 }}
+          transition={{ duration: 0.7, ease: "easeOut" }}
+          style={{
+            position: "absolute", inset: 0,
+            background: "var(--c-bg)",
+            zIndex: 15,
+            pointerEvents: "none",
+          }}
+        />
 
         {/* Edge fades */}
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "15%", background: "linear-gradient(#0e1012, transparent)", zIndex: 1, pointerEvents: "none" }} />
@@ -1621,6 +1860,9 @@ const HeroSection = ({ onAnalyze }) => {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0, transition: { duration: 0.2 } }}
               transition={{ duration: 0.5, delay: 2.4 }}
+              onClick={triggerTransition}
+              role="button"
+              tabIndex={0}
               style={{
                 position: "absolute",
                 bottom: isMobile ? 148 : 168,
@@ -1631,7 +1873,8 @@ const HeroSection = ({ onAnalyze }) => {
                 alignItems: "center",
                 gap: 8,
                 zIndex: 6,
-                pointerEvents: "none",
+                pointerEvents: "auto",
+                cursor: "pointer",
               }}
             >
               {/* bouncing double chevron pointing up */}
@@ -1669,9 +1912,21 @@ const HeroSection = ({ onAnalyze }) => {
           <div style={{ width: 1, height: 40, background: "linear-gradient(var(--c-cyan), transparent)" }} />
         </div>
       </div>
+      {/* 200vh spacer — conditional so it collapses when hero is dismissed,
+          letting section 01 sit at the top of the page. */}
+      {heroActive && <section ref={sectionRef} style={{ height: "200vh", background: "#0e1012" }} />}
 
-      {/* 300vh spacer — car parks at ~81vh of scroll, auto-sequence handles the rest */}
-      <section ref={sectionRef} style={{ height: "300vh", background: "#0e1012" }} />
+      {/* Chapter-changing wipe → reveals section 01 */}
+      <AnimatePresence>
+        {transitioning && (
+          <ChapterTransition
+            key="chapter-wipe"
+            isMobile={isMobile}
+            onCovered={handleCovered}
+            onDone={handleTransitionDone}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 };
@@ -1720,7 +1975,7 @@ const ScrollStory = ({ onScanTrigger }) => {
   ];
 
   return (
-    <div style={{ background: "var(--c-bg2)", paddingTop: "30vh" }}>
+    <div id="chapter-01" style={{ background: "var(--c-bg2)", paddingTop: "8vh" }}>
       <GridBackground opacity={0.5} />
 
       {/* Scene 01: Classification */}
@@ -2606,6 +2861,79 @@ const Footer = () => {
   );
 };
 
+// ─── CHAPTER TRANSITION ───────────────────────────────────────────────────────
+// Title-card wipe between the hero intro and section 01. A dark panel sweeps up to
+// cover the screen, shows "CHAPTER 01 — DAMAGE CLASSIFICATION", then lifts away.
+// onCovered fires while the screen is fully covered (the hero unmounts + the page
+// jumps to 01 behind the panel, so no scroll motion is ever visible).
+const ChapterTransition = ({ onCovered, onDone, isMobile }) => {
+  const [phase, setPhase] = useState("cover"); // "cover" → "leave"
+  const covered = phase !== "cover";
+
+  return (
+    <motion.div
+      initial={{ y: "100%" }}
+      animate={{ y: phase === "leave" ? "-100%" : "0%" }}
+      transition={{ duration: 0.62, ease: [0.76, 0, 0.24, 1] }}
+      onAnimationComplete={() => {
+        if (phase === "cover") {
+          onCovered?.();
+          setTimeout(() => setPhase("leave"), 750);
+        } else {
+          onDone?.();
+        }
+      }}
+      style={{
+        position: "fixed", inset: 0, zIndex: 60,
+        background: "var(--c-bg)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        overflow: "hidden",
+      }}
+    >
+      <GridBackground opacity={0.6} />
+      {/* leading cyan edge of the wipe */}
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "linear-gradient(90deg, transparent, var(--c-cyan), transparent)" }} />
+
+      <motion.div
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: covered ? 0 : 1, y: covered ? -12 : 0 }}
+        transition={{ duration: 0.4, delay: covered ? 0 : 0.28, ease: [0.16, 1, 0.3, 1] }}
+        style={{ position: "relative", textAlign: "center", padding: "0 6vw" }}
+      >
+        <div style={{
+          fontFamily: "var(--font-mono)", fontSize: "0.68rem",
+          color: "var(--c-text-dim)", letterSpacing: "0.5em", marginBottom: "1.1rem",
+        }}>
+          CHAPTER
+        </div>
+        <div style={{
+          fontFamily: "var(--font-display)",
+          fontSize: isMobile ? "clamp(4rem, 22vw, 6rem)" : "clamp(6rem, 12vw, 9rem)",
+          lineHeight: 0.9, letterSpacing: "0.04em",
+          background: "linear-gradient(90deg, var(--c-blue-bright), var(--c-cyan))",
+          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+          marginBottom: "1.2rem",
+        }}>
+          01
+        </div>
+        {/* divider draws in */}
+        <motion.div
+          initial={{ scaleX: 0 }}
+          animate={{ scaleX: covered ? 0 : 1 }}
+          transition={{ duration: 0.5, delay: covered ? 0 : 0.5, ease: [0.16, 1, 0.3, 1] }}
+          style={{ height: 1, width: isMobile ? 180 : 260, margin: "0 auto 1.2rem", background: "var(--c-cyan)", transformOrigin: "center" }}
+        />
+        <div style={{
+          fontFamily: "var(--font-mono)", fontSize: isMobile ? "0.8rem" : "0.95rem",
+          color: "rgba(255,255,255,0.82)", letterSpacing: "0.28em",
+        }}>
+          ◈ DAMAGE CLASSIFICATION
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 // ─── LOADING SCREEN ───────────────────────────────────────────────────────────
 const LoadingScreen = ({ onComplete }) => {
   const [progress, setProgress] = useState(0);
@@ -2705,11 +3033,23 @@ const LoadingScreen = ({ onComplete }) => {
 
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [loaded, setLoaded] = useState(false);
+  // Two-phase load:
+  //   fakeProgressDone → fake bar finished; mount the content so the Canvas starts warming up
+  //   sceneReady       → SceneReadySignal fired (first real rendered frame)
+  // The loading screen exits only when BOTH are true, so the garage is already drawn
+  // the moment the loading screen slides away — zero black-screen gap.
+  const [fakeProgressDone, setFakeProgressDone] = useState(false);
+  const [sceneReady, setSceneReady]             = useState(false);
+  const loaderDone  = fakeProgressDone && sceneReady;
+  const showContent = fakeProgressDone;            // mount content early so Canvas warms up
+
   const uploadRef = useRef();
 
   const scrollToUpload = () => {
-    uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.dispatchEvent(new CustomEvent("dv:dismiss-hero"));
+    requestAnimationFrame(() => {
+      uploadRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   return (
@@ -2720,19 +3060,25 @@ export default function App() {
         Dent Vision AI — AI-powered vehicle damage detection platform
       </h2>
 
+      {/* Loading screen stays until the 3D scene has fired its first real frame */}
       <AnimatePresence>
-        {!loaded && <LoadingScreen key="loader" onComplete={() => setLoaded(true)} />}
+        {!loaderDone && <LoadingScreen key="loader" onComplete={() => setFakeProgressDone(true)} />}
       </AnimatePresence>
 
-      {loaded && (
+      {/* Content mounts as soon as fake-progress finishes (behind the loading screen)
+          so WebGL context creation + shader compilation + GLB parsing happen in parallel. */}
+      {showContent && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
+          transition={{ duration: 0.4 }}
         >
           <Navigation onAnalyze={scrollToUpload} />
           <main>
-            <HeroSection onAnalyze={scrollToUpload} />
+            <HeroSection
+              onAnalyze={scrollToUpload}
+              onSceneReady={() => setSceneReady(true)}
+            />
             <ScrollStory onScanTrigger={scrollToUpload} />
             <UploadSection sectionRef={uploadRef} />
           </main>
