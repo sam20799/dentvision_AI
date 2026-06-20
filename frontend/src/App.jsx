@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, memo, Suspense } from "react";
 import { motion, useScroll, useTransform, useSpring, useMotionValue, AnimatePresence, useInView } from "framer-motion";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Float, MeshReflectorMaterial, ContactShadows, Sphere, Box, Torus, Cylinder, useGLTF, Text, Html } from "@react-three/drei";
@@ -345,6 +345,15 @@ const DAMAGE_ANCHORS = [
   [PARK_X + 1.90,  1.45,  PARK_Z + 0.50],  // hood         (Paint Damage)  — mid height
   [PARK_X + 2.60,  1.20,  PARK_Z + 0.55],  // front bumper (Bumper Scuff)  — front mid
 ];
+// Mobile anchors: all clustered on the near-camera face of the car body, varying Y.
+// Portrait phones have ~30° horizontal FOV so the 4.1m X-spread of desktop anchors
+// clips off-screen. These all project near the vertical centre of the portrait viewport.
+const MOBILE_DAMAGE_ANCHORS = [
+  [PARK_X + 0.30,  1.85,  PARK_Z + 1.1],  // high   — door top
+  [PARK_X + 0.30,  1.25,  PARK_Z + 1.1],  // mid    — door mid
+  [PARK_X + 0.30,  0.75,  PARK_Z + 1.1],  // low    — sill
+  [PARK_X + 0.30,  0.25,  PARK_Z + 1.1],  // ground — bumper strip
+];
 const COMPONENT_ANCHORS = [
   [PARK_X + 2.20,  0.05,  PARK_Z + 0.50],  // front bumper — ground level
   [PARK_X + 0.25,  1.60,  PARK_Z + 1.10],  // driver door  — mid-high
@@ -540,7 +549,7 @@ const ParkedCar = ({ url, position, rotationY = 0, targetHeight = 1.35 }) => {
 };
 
 // ─── GARAGE ENVIRONMENT ───────────────────────────────────────────────────────
-const GarageEnvironment = () => {
+const GarageEnvironment = memo(() => {
   const W = 11, H = 5.2, L = 38;
   const colZs = [-3, -9, -15, -21, -27];
 
@@ -1034,7 +1043,7 @@ const GarageEnvironment = () => {
       </group>
     </>
   );
-};
+});
 
 // ─── HERO CAMERA CONTROLLER ───────────────────────────────────────────────────
 // p 0–0.45  : Wide garage view — car drives in from z=-22 toward camera
@@ -1042,7 +1051,11 @@ const GarageEnvironment = () => {
 // p 0.60–0.74: Scan / damage — slight rise and leftward nudge
 // p 0.74–0.88: Component analysis — higher angle
 // p 0.88–1.0 : Pull back to reveal full garage
-const HeroCarController = ({ scrollProgressRef }) => {
+// lowPerf (mobile portrait) uses wider FOV + pulled-back inspection positions so the
+// full car + all annotation cards fit inside the narrow horizontal viewport.
+// Portrait: Three.js vertical fov=55 → horizontal fov ≈ 32° at 9:16 aspect,
+//           which clips the car. Widening to 62° + pulling back ~2× fixes it.
+const HeroCarController = ({ scrollProgressRef, lowPerf = false }) => {
   const { camera } = useThree();
   // Start looking slightly left so we catch the car entering from the left edge
   const curPos  = useRef(new THREE.Vector3(-1, 2.0, 3));
@@ -1050,52 +1063,65 @@ const HeroCarController = ({ scrollProgressRef }) => {
   const tgtPos  = useRef(new THREE.Vector3(-1, 2.0, 3));
   const tgtLook = useRef(new THREE.Vector3(-5, 0.6, PARK_Z));
 
+  // Set FOV once on mount based on platform
+  useEffect(() => {
+    camera.fov = lowPerf ? 62 : 55;
+    camera.updateProjectionMatrix();
+  }, [camera, lowPerf]);
+
   useFrame((state) => {
     const p = scrollProgressRef.current;
 
+    // Inspection positions differ by platform: mobile pulls back further so the
+    // full car + annotation cards fit inside portrait's narrow horizontal FOV.
+    const inspectX  = lowPerf ? PARK_X + 2.8 : PARK_X + 3.5;
+    const inspectZ  = lowPerf ? PARK_Z + 5.0 : PARK_Z + 2.5;
+    const inspectY1 = lowPerf ? 1.8 : 1.35;
+    const inspectY2 = lowPerf ? 2.2 : 1.6;
+    const overviewX = lowPerf ? PARK_X + 2.0 : PARK_X + 2.5;
+    const overviewY = lowPerf ? 3.5 : 2.8;
+    const overviewZ = lowPerf ? PARK_Z + 5.5 : PARK_Z + 3.5;
+
     if (p < 0.45) {
       // Wide side view: camera tracks the car driving left → right
-      // Subtle pan follows car from far-left to parked position
       const driveT = Math.min(1, p / 0.45);
       const easedT = driveT < 0.5 ? 4*driveT*driveT*driveT : 1-Math.pow(-2*driveT+2,3)/2;
       const approxCarX = THREE.MathUtils.lerp(START_X, PARK_X, easedT);
       const breathY = Math.sin(state.clock.elapsedTime * 0.4) * 0.015;
       tgtPos.current.set(-1, 2.0 + breathY, 3);
-      // Look slightly ahead of the car as it enters
       tgtLook.current.set(Math.min(approxCarX + 2, PARK_X + 2), 0.6, PARK_Z);
     } else if (p < 0.62) {
       // Zoom in: camera swings to front 3/4 of parked car
-      // Car faces +X so we position camera to the car's right (+X side) and ahead
       const t = (p - 0.45) / 0.17;
       const e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
       tgtPos.current.set(
-        THREE.MathUtils.lerp(-1, PARK_X + 3.5, e),  // swing to car's right
-        THREE.MathUtils.lerp(2.0, 1.35, e),
-        THREE.MathUtils.lerp(3, PARK_Z + 2.5, e)
+        THREE.MathUtils.lerp(-1, inspectX, e),
+        THREE.MathUtils.lerp(2.0, inspectY1, e),
+        THREE.MathUtils.lerp(3, inspectZ, e)
       );
       tgtLook.current.set(PARK_X, THREE.MathUtils.lerp(0.6, 0.65, e), PARK_Z);
     } else if (p < 0.77) {
-      // Scan: hold inspection front-right 3/4, rise slightly
+      // Scan: hold inspection angle, rise slightly
       const t = (p - 0.62) / 0.15;
-      tgtPos.current.set(PARK_X + 3.5, THREE.MathUtils.lerp(1.35, 1.6, t), PARK_Z + 2.5);
+      tgtPos.current.set(inspectX, THREE.MathUtils.lerp(inspectY1, inspectY2, t), inspectZ);
       tgtLook.current.set(PARK_X, 0.65, PARK_Z);
     } else if (p < 0.87) {
       // Damage callouts: hold
-      tgtPos.current.set(PARK_X + 3.5, 1.6, PARK_Z + 2.5);
+      tgtPos.current.set(inspectX, inspectY2, inspectZ);
       tgtLook.current.set(PARK_X, 0.65, PARK_Z);
     } else if (p < 0.93) {
       // Component analysis: rise for higher overview angle
       const t = (p - 0.87) / 0.06;
       const e = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
       tgtPos.current.set(
-        THREE.MathUtils.lerp(PARK_X + 3.5, PARK_X + 2.5, e),
-        THREE.MathUtils.lerp(1.6, 2.8, e),
-        THREE.MathUtils.lerp(PARK_Z + 2.5, PARK_Z + 3.5, e)
+        THREE.MathUtils.lerp(inspectX, overviewX, e),
+        THREE.MathUtils.lerp(inspectY2, overviewY, e),
+        THREE.MathUtils.lerp(inspectZ, overviewZ, e)
       );
       tgtLook.current.set(PARK_X, THREE.MathUtils.lerp(0.65, 0.4, e), PARK_Z);
     } else {
       // Hold the component-analysis angle as the final resting position
-      tgtPos.current.set(PARK_X + 2.5, 2.8, PARK_Z + 3.5);
+      tgtPos.current.set(overviewX, overviewY, overviewZ);
       tgtLook.current.set(PARK_X, 0.4, PARK_Z);
     }
 
@@ -1113,7 +1139,8 @@ const HeroCarController = ({ scrollProgressRef }) => {
 // ─── DAMAGE CALLOUT ANNOTATIONS (stage 3) ────────────────────────────────────
 // Sequential reveal: one card at a time, driven by useMotionValue (no React re-renders).
 // Each card gets CARD_MS ms: FADE in → hold → FADE out. Cards don't overlap.
-const DamageAnnotations = ({ stageRef }) => {
+const DamageAnnotations = ({ stageRef, lowPerf = false }) => {
+  const anchors = lowPerf ? MOBILE_DAMAGE_ANCHORS : DAMAGE_ANCHORS;
   const CARD_MS = 950, FADE = 220;
   const op0 = useMotionValue(0), op1 = useMotionValue(0), op2 = useMotionValue(0), op3 = useMotionValue(0);
   const ops = [op0, op1, op2, op3];
@@ -1143,8 +1170,9 @@ const DamageAnnotations = ({ stageRef }) => {
     }
   });
 
-  return HERO_SUPRA.damage.map((d, i) => (
-    <Html key={i} position={DAMAGE_ANCHORS[i]} center style={{ pointerEvents: "none" }}>
+  const items = lowPerf ? HERO_SUPRA.damage.slice(0, 2) : HERO_SUPRA.damage;
+  return items.map((d, i) => (
+    <Html key={i} position={anchors[i]} center style={{ pointerEvents: "none" }}>
       <motion.div
         style={{
           opacity: ops[i], y: ys[i],
@@ -1153,8 +1181,8 @@ const DamageAnnotations = ({ stageRef }) => {
           position: "relative",
           background: "rgba(4,6,14,0.92)",
           border: `1px solid ${SEV_COLOR[d.severity]}55`,
-          padding: "7px 10px 8px",
-          minWidth: 152,
+          padding: lowPerf ? "6px 8px 7px" : "7px 10px 8px",
+          minWidth: lowPerf ? 132 : 152,
         }}
       >
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: SEV_COLOR[d.severity] }} />
@@ -1247,20 +1275,29 @@ const SceneReadySignal = ({ onReady }) => {
   return null;
 };
 
-// ─── HERO VEHICLE SCENE (desktop) ─────────────────────────────────────────────
-const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef, onReady }) => (
+// ─── HERO VEHICLE SCENE (desktop + mobile) ────────────────────────────────────
+// lowPerf=true on mobile: directional light keeps specular but drops castShadow;
+// a baked ContactShadow replaces the dynamic shadow map (frames=1 = zero per-frame cost).
+const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef, onReady, lowPerf = false }) => (
   <>
     {/* Renders immediately — no async deps */}
     <color attach="background" args={["#0e1012"]} />
     <fog attach="fog" args={["#0e1012", 30, 56]} />
     <ambientLight intensity={0.45} color="#f0ece4" />
-    <directionalLight position={[4, 8, 2]} intensity={1.4} color="#fff8f0" castShadow shadow-mapSize={[1024, 1024]} />
+    {lowPerf
+      ? <directionalLight position={[4, 8, 2]} intensity={1.4} color="#fff8f0" />
+      : <directionalLight position={[4, 8, 2]} intensity={1.4} color="#fff8f0" castShadow shadow-mapSize={[1024, 1024]} />
+    }
     <pointLight position={[PARK_X, 4.8, PARK_Z]} intensity={10} color="#f8f4ee" decay={2} />
     <pointLight position={[-5, 3.5, PARK_Z]} intensity={6} color="#f4f0e8" decay={2} />
     <pointLight position={[0, 4.2, -15]} intensity={5} color="#f4f0e8" decay={2} />
+    {lowPerf && (
+      <ContactShadows position={[PARK_X, 0.02, PARK_Z]} scale={6} blur={2.4}
+                      opacity={0.5} far={4} resolution={512} frames={1} color="#000" />
+    )}
     <GarageEnvironment />
-    <DamageAnnotations stageRef={stageRef} />
-    <HeroCarController scrollProgressRef={scrollProgressRef} />
+    <DamageAnnotations stageRef={stageRef} lowPerf={lowPerf} />
+    <HeroCarController scrollProgressRef={scrollProgressRef} lowPerf={lowPerf} />
 
     {/* Car + env map load async — garage is already visible while this resolves */}
     <Suspense fallback={null}>
@@ -1273,30 +1310,6 @@ const HeroVehicleScene = ({ scrollProgressRef, scanProgressRef, stageRef, onRead
     <Suspense fallback={null}>
       <ParkedCar url={PARKED_LANCIA} position={[-3.5, -15]} targetHeight={1.3} />
       <ParkedCar url={PARKED_GT40}   position={[3.5, -15]}  targetHeight={1.05} />
-    </Suspense>
-  </>
-);
-
-// ─── HERO VEHICLE LITE (mobile — no reflector, lighter env) ───────────────────
-const HeroVehicleLite = ({ scrollProgressRef, scanProgressRef, stageRef, onReady }) => (
-  <>
-    {/* Renders immediately — no async deps */}
-    <color attach="background" args={["#0e1012"]} />
-    <fog attach="fog" args={["#0e1012", 20, 42]} />
-    <ambientLight intensity={0.5} color="#f0ece4" />
-    <pointLight position={[PARK_X, 4.8, PARK_Z]} intensity={8} color="#f8f4ee" decay={2} />
-    <pointLight position={[-5, 3.5, PARK_Z]} intensity={4} color="#f4f0e8" decay={2} />
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -15]}>
-      <planeGeometry args={[11, 38]} />
-      <meshStandardMaterial color="#9a9690" roughness={0.75} metalness={0.02} />
-    </mesh>
-    <DamageAnnotations stageRef={stageRef} />
-    <HeroCarController scrollProgressRef={scrollProgressRef} />
-
-    {/* Car loads async — floor + lights are already visible */}
-    <Suspense fallback={null}>
-      <HeroVehicle scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} />
-      <SceneReadySignal onReady={onReady} />
     </Suspense>
   </>
 );
@@ -1611,17 +1624,20 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
         pointerEvents: heroActive ? "auto" : "none",
       }}>
         <Canvas
-          shadows={!isMobile}
+          shadows
           dpr={isMobile ? [1, 1.2] : [1, 1.5]}
           camera={{ position: [-1, 2.0, 3], fov: 55 }}
           gl={{ antialias: true, alpha: false }}
           style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
           onCreated={({ gl }) => gl.setClearColor('#0e1012')}
         >
-          {isMobile
-            ? <HeroVehicleLite scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} onReady={onSceneReady} />
-            : <HeroVehicleScene scrollProgressRef={scrollProgressRef} scanProgressRef={scanProgressRef} stageRef={stageRef} onReady={onSceneReady} />
-          }
+          <HeroVehicleScene
+            scrollProgressRef={scrollProgressRef}
+            scanProgressRef={scanProgressRef}
+            stageRef={stageRef}
+            onReady={onSceneReady}
+            lowPerf={isMobile}
+          />
         </Canvas>
 
         {/* Scene-ready overlay — same colour as the loading screen background.
@@ -1778,75 +1794,93 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
                 ◈ INSPECTION COMPLETE
               </motion.div>
 
-              {/* Damage findings row — each item staggers in */}
-              <div style={{ display: "flex", gap: isMobile ? 12 : 0, flexWrap: isMobile ? "wrap" : "nowrap" }}>
-                {HERO_SUPRA.damage.map((d, i) => (
+              {/* Damage findings — desktop: horizontal columns; mobile: compact 2-row list */}
+              {isMobile ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {HERO_SUPRA.damage.slice(0, 2).map((d, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.35, delay: 0.4 + i * 0.5 }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: "var(--font-mono)" }}
+                    >
+                      <span style={{ fontSize: "0.55rem", color: "var(--c-cyan)", letterSpacing: "0.08em", flex: 1 }}>
+                        ◈ {d.label.toUpperCase()}
+                      </span>
+                      <span style={{
+                        fontSize: "0.5rem", padding: "1px 6px",
+                        color: SEV_COLOR[d.severity],
+                        background: `${SEV_COLOR[d.severity]}1a`,
+                      }}>{d.severity}</span>
+                      <span style={{ fontSize: "0.62rem", color: "#3ddc84", minWidth: 44, textAlign: "right" }}>{d.estimate}</span>
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 0 }}>
+                  {HERO_SUPRA.damage.map((d, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, delay: 0.4 + i * 0.5 }}
+                      style={{
+                        flex: 1,
+                        borderRight: i < HERO_SUPRA.damage.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none",
+                        paddingRight: i < HERO_SUPRA.damage.length - 1 ? "clamp(12px,2vw,28px)" : 0,
+                        paddingLeft: i > 0 ? "clamp(12px,2vw,28px)" : 0,
+                      }}
+                    >
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.52rem", color: "var(--c-cyan)", letterSpacing: "0.1em", marginBottom: 4 }}>
+                        ◈ {d.label.toUpperCase()} DETECTED
+                      </div>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", fontFamily: "var(--font-mono)", fontSize: "0.58rem" }}>
+                        <span style={{ color: "var(--c-text-dim)" }}>CONF</span>
+                        <span style={{ color: "#fff", fontWeight: 600 }}>{d.confidence}</span>
+                        <span style={{
+                          color: SEV_COLOR[d.severity],
+                          background: `${SEV_COLOR[d.severity]}1a`,
+                          padding: "1px 6px",
+                        }}>{d.severity}</span>
+                        <motion.div style={{ flex: 1, height: 2, background: "rgba(255,255,255,0.08)", marginLeft: 6, overflow: "hidden" }}>
+                          <motion.div
+                            initial={{ width: "0%" }}
+                            animate={{ width: `${parseFloat(d.confidence) * 100}%` }}
+                            transition={{ duration: 0.6, delay: 0.7 + i * 0.5, ease: "easeOut" }}
+                            style={{ height: "100%", background: SEV_COLOR[d.severity] }}
+                          />
+                        </motion.div>
+                        <span style={{ color: "#3ddc84" }}>{d.estimate}</span>
+                      </div>
+                    </motion.div>
+                  ))}
+
+                  {/* Summary stats — desktop only */}
                   <motion.div
-                    key={i}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0.4 + i * 0.5 }}
+                    transition={{ duration: 0.4, delay: 0.4 + HERO_SUPRA.damage.length * 0.5 }}
                     style={{
-                      flex: 1,
-                      borderRight: !isMobile && i < HERO_SUPRA.damage.length - 1 ? "1px solid rgba(255,255,255,0.07)" : "none",
-                      paddingRight: !isMobile && i < HERO_SUPRA.damage.length - 1 ? "clamp(12px,2vw,28px)" : 0,
-                      paddingLeft: !isMobile && i > 0 ? "clamp(12px,2vw,28px)" : 0,
+                      borderLeft: "1px solid rgba(0,212,255,0.2)",
+                      paddingLeft: "clamp(12px,2vw,28px)",
+                      marginLeft: 4,
+                      display: "flex", gap: 24, alignItems: "center",
+                      flexShrink: 0,
                     }}
                   >
-                    <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.52rem", color: "var(--c-cyan)", letterSpacing: "0.1em", marginBottom: 4 }}>
-                      ◈ {d.label.toUpperCase()} DETECTED
-                    </div>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center", fontFamily: "var(--font-mono)", fontSize: "0.58rem" }}>
-                      <span style={{ color: "var(--c-text-dim)" }}>CONF</span>
-                      <span style={{ color: "#fff", fontWeight: 600 }}>{d.confidence}</span>
-                      <span style={{
-                        color: d.severity === "HIGH" ? "#ff6b6b" : d.severity === "MED" ? "var(--c-gold)" : "#6bcfff",
-                        background: d.severity === "HIGH" ? "rgba(255,107,107,0.12)" : d.severity === "MED" ? "rgba(200,148,58,0.12)" : "rgba(107,207,255,0.12)",
-                        padding: "1px 6px",
-                      }}>{d.severity}</span>
-                      {/* Confidence bar — animates width after item appears */}
-                      <motion.div
-                        style={{ flex: 1, height: 2, background: "rgba(255,255,255,0.08)", marginLeft: 6, overflow: "hidden" }}
-                      >
-                        <motion.div
-                          initial={{ width: "0%" }}
-                          animate={{ width: `${parseFloat(d.confidence) * 100}%` }}
-                          transition={{ duration: 0.6, delay: 0.7 + i * 0.5, ease: "easeOut" }}
-                          style={{
-                            height: "100%",
-                            background: d.severity === "HIGH" ? "#ff6b6b" : d.severity === "MED" ? "var(--c-gold)" : "#6bcfff",
-                          }}
-                        />
-                      </motion.div>
-                      <span style={{ color: "#3ddc84" }}>{d.estimate}</span>
-                    </div>
+                    {[
+                      { label: "TOTAL", value: "~$595", color: "#3ddc84" },
+                      { label: "AVG CONF", value: "77.3%", color: "#fff" },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                        <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.5rem", color: "var(--c-text-dim)", letterSpacing: "0.1em" }}>{label}</div>
+                        <div style={{ fontFamily: "var(--font-display)", fontSize: "1.3rem", color, letterSpacing: "0.04em" }}>{value}</div>
+                      </div>
+                    ))}
                   </motion.div>
-                ))}
-
-                {/* Summary stats — reveal last */}
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: 0.4 + HERO_SUPRA.damage.length * 0.5 }}
-                  style={{
-                    borderLeft: isMobile ? "none" : "1px solid rgba(0,212,255,0.2)",
-                    paddingLeft: isMobile ? 0 : "clamp(12px,2vw,28px)",
-                    marginLeft: isMobile ? 0 : 4,
-                    display: "flex", gap: isMobile ? 16 : 24, alignItems: "center",
-                    flexShrink: 0,
-                  }}
-                >
-                  {[
-                    { label: "TOTAL", value: "~$595", color: "#3ddc84" },
-                    { label: "AVG CONF", value: "77.3%", color: "#fff" },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.5rem", color: "var(--c-text-dim)", letterSpacing: "0.1em" }}>{label}</div>
-                      <div style={{ fontFamily: "var(--font-display)", fontSize: isMobile ? "1.1rem" : "1.3rem", color, letterSpacing: "0.04em" }}>{value}</div>
-                    </div>
-                  ))}
-                </motion.div>
-              </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
