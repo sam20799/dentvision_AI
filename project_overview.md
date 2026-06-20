@@ -138,6 +138,38 @@ Response: { "status": "sent", "count": 2 }
 
 ## Changelog
 
+### v1.4 — 3D Garage Hero Redesign (`feature/ui-improvements`)
+
+**New: Scroll-driven single-vehicle garage hero**
+- Replaced the multi-car showroom with a focused single-vehicle hero (Toyota Supra MK4 GLB)
+- 5-stage auto-sequence driven by scroll + internal timer (no manual scroll required after car parks):
+  1. **Entrance** — car drives in from off-screen left with suspension bob, wheel rotation, and headlight glow
+  2. **Zoom-in** — camera lerps to inspection angle once car parks at `rawP = 0.45`
+  3. **AI Scan** — emissive scan beam sweeps the car's bounding box length; scan overlay effect
+  4. **Inspection Complete** — stage 5 inspection report reveals bottom-strip damage findings (staggered per item, 0.5s apart)
+  5. **Swipe hint** — "SWIPE UP TO CONTINUE" double-chevron hint appears after report is fully revealed; one user scroll gesture triggers smooth exit to next section
+
+**Garage environment**
+- Full 3D inspection garage: structural columns, walls, floor, LED screen, tool cabinet, EV charger, monitor, gate posts
+- Off-white neon rings on car platform (emissiveIntensity tuned down to avoid overpowering car color)
+- LED screen neon frame widened (10.8 m housing) so content doesn't overflow bezels
+- Z-fighting eliminated: all geometry lifted ≥ 0.005 m off y = 0
+
+**Scroll / camera behaviour**
+- Hero section height: **300 vh** — car parks at ~81 vh of scroll, auto-sequence handles the rest
+- Camera lerp speeds: fast during zoom-in (0.08), fast on exit (0.09), slow elsewhere (0.038)
+- After sequence: `running = true` kept set so scroll-back to `rawP < 0.3` resets cleanly; scroll-forward by 30 px fires smooth exit to hero end
+- `ScrollStory` gets `paddingTop: 30vh` buffer so Damage Classification content is safely in view when the hero canvas fades
+
+**Bug fixes**
+- Fixed sequence restart on scroll-back: kept `running = true` after natural completion instead of resetting it
+- Fixed blank space gap after hero: changed `isInView` condition from `rect.bottom > window.innerHeight − 1` to `rect.bottom > 0` so the canvas stays visible through the full hero spacer
+- Fixed hero canvas not collapsing over Damage Classification: hero height + 30vh ScrollStory buffer ensure section content is well below viewport top when canvas first fades
+- Fixed full-page click/upload blocker: `pointer-events: none` does NOT cascade to children in HTML (unlike SVG) — added it explicitly to `GridBackground`'s inner child divs and to the R3F `<Canvas>` element, both of which had `position: absolute, inset: 0` covering the entire page with default `pointer-events: auto`
+- `StoryScene` `useInView` threshold lowered from 0.2 → 0.05 so scene reveal animations trigger as soon as the section enters the viewport
+
+---
+
 ### v1.0 — Initial Release (`ed50384`)
 - Cinematic React frontend with 3D car visualization (React Three Fiber)
 - Hero section with particle field, scroll-triggered story (5 scenes)
