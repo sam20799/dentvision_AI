@@ -138,6 +138,23 @@ Response: { "status": "sent", "count": 2 }
 
 ## Changelog
 
+### v1.7 — Bugatti Showpiece in Enterprise Scale Section (`main`)
+
+**New 3D showpiece in the "Enterprise Scale" story scene**
+- Replaced the 9-cell CSS animation grid (pulsing ◈ icons) with a dedicated WebGL Canvas featuring the Bugatti model as a rotating showpiece
+- `BugattiRotator` component: loads `car-bugatti.glb`, auto-scales to 0.85m height (same `Box3` + `SkeletonUtils.clone` pattern as `ParkedCar`), rotates clockwise at 0.18 rad/s via `useFrame`
+- `BugattiShowcaseCanvas` (memoised): isolated Canvas with a 3-point light rig (white key, blue fill, gold back), `Environment preset="warehouse"` for metallic reflections, `ContactShadows frames={1}` baked shadow (zero per-frame cost), and `OrbitControls` (zoom/pan disabled) so users can drag to inspect any angle
+- "DRAG TO INSPECT" hint label in bottom-right corner
+
+**Bugatti tyre rendering fix**
+- Root cause: flat `envMapIntensity = 2.2` applied to all materials including rubber — blown-out tyres; `o.material` assumed to be a single object but tyre meshes use material arrays → un-cloned shared materials caused corruption
+- Fix: traverse now handles both single and array materials; rubber-like materials (`roughness > 0.65 && metalness < 0.15`) get `envMapIntensity = 0.15` instead of 2.0; `depthWrite: true`, `depthTest: true`, and `transparent: false` (for fully opaque mats) eliminate z-sort disappearing; `needsUpdate = true` after clone ensures Three.js picks up changes
+
+**Preload**
+- `useGLTF.preload("/models/car-bugatti.glb")` registered at module level alongside Supra and parked-car preloads — GLB parses during app load, not on scroll into view
+
+---
+
 ### v1.6 — Mobile Hero Touch Architecture (`main`)
 
 **Problem solved: entire page scrolling up during hero sequence**

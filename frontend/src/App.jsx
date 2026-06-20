@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo, Suspense } from "react";
 import { motion, useScroll, useTransform, useSpring, useMotionValue, AnimatePresence, useInView } from "framer-motion";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Environment, Float, MeshReflectorMaterial, ContactShadows, Sphere, Box, Torus, Cylinder, useGLTF, Text, Html } from "@react-three/drei";
+import { Environment, Float, MeshReflectorMaterial, ContactShadows, Sphere, Box, Torus, Cylinder, useGLTF, Text, Html, OrbitControls } from "@react-three/drei";
 import { clone as cloneScene } from "three/examples/jsm/utils/SkeletonUtils.js";
 import * as THREE from "three";
 
@@ -328,6 +328,87 @@ const PARKED_LANCIA = "/models/car-lancia.glb";
 const PARKED_GT40   = "/models/car-ford-gt40.glb";
 useGLTF.preload(PARKED_LANCIA);
 useGLTF.preload(PARKED_GT40);
+
+const BUGATTI_URL = "/models/car-bugatti.glb";
+useGLTF.preload(BUGATTI_URL);
+
+// ─── BUGATTI SHOWPIECE ────────────────────────────────────────────────────────
+// Slowly rotates on its own Y axis; no scroll / gesture dependency.
+const BugattiRotator = () => {
+  const { scene } = useGLTF(BUGATTI_URL);
+  const groupRef = useRef();
+
+  const model = useMemo(() => {
+    const c = cloneScene(scene);
+    const box = new THREE.Box3().setFromObject(c);
+    const size = box.getSize(new THREE.Vector3());
+    const s = size.y > 0.001 ? 0.85 / size.y : 1;
+    c.scale.setScalar(s);
+    const box2 = new THREE.Box3().setFromObject(c);
+    const center = box2.getCenter(new THREE.Vector3());
+    const size2  = box2.getSize(new THREE.Vector3());
+    c.position.set(-center.x, -center.y + size2.y / 2, -center.z);
+    c.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = false;
+      o.receiveShadow = false;
+      o.renderOrder = 0;
+
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const cloned = mats.map((m) => {
+        const mc = m.clone();
+        // Rubber/tyre materials: dark, rough, non-metallic — keep env low
+        const isRubber = mc.roughness > 0.65 && mc.metalness < 0.15;
+        mc.envMapIntensity = isRubber ? 0.15 : 2.0;
+        mc.depthWrite = true;
+        mc.depthTest = true;
+        // Force opaque if alpha is effectively 1 — prevents sort-order disappearing
+        if (mc.opacity >= 0.99) mc.transparent = false;
+        mc.needsUpdate = true;
+        return mc;
+      });
+      o.material = Array.isArray(o.material) ? cloned : cloned[0];
+    });
+    return c;
+  }, [scene]);
+
+  useFrame((_, delta) => {
+    if (groupRef.current) groupRef.current.rotation.y -= delta * 0.18;
+  });
+
+  return (
+    <group ref={groupRef}>
+      <primitive object={model} />
+      <ContactShadows position={[0, 0.005, 0]} scale={5} blur={2.5}
+                      opacity={0.55} far={3.5} resolution={512} frames={1} color="#000" />
+    </group>
+  );
+};
+
+const BugattiShowcaseCanvas = memo(() => (
+  <Canvas
+    camera={{ position: [3.8, 1.2, 3.8], fov: 38 }}
+    dpr={[1, 1.5]}
+    gl={{ antialias: true, alpha: true }}
+    style={{ width: "100%", height: "100%" }}
+  >
+    <ambientLight intensity={0.35} />
+    <pointLight position={[4, 6, 4]} intensity={8} color="#ffffff" />
+    <pointLight position={[-4, 3, -3]} intensity={4} color="#3b8beb" />
+    <pointLight position={[0, 8, -5]} intensity={3} color="#ffd27a" />
+    <Environment preset="warehouse" />
+    <Suspense fallback={null}>
+      <BugattiRotator />
+    </Suspense>
+    <OrbitControls
+      enableZoom={false}
+      enablePan={false}
+      minPolarAngle={Math.PI / 6}
+      maxPolarAngle={Math.PI / 2.2}
+      autoRotate={false}
+    />
+  </Canvas>
+));
 
 // ─── HERO VEHICLE ─────────────────────────────────────────────────────────────
 // Car drives LEFT → RIGHT (+X axis). outerRef moves X. innerRef animates body.
@@ -2170,53 +2251,28 @@ const ScrollStory = ({ onScanTrigger }) => {
               ))}
             </div>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr", gap: isMobile ? 6 : 8 }}>
-            {Array.from({ length: isMobile ? 6 : 9 }, (_, i) => (
-              <motion.div
-                key={i}
-                style={{
-                  height: isMobile ? 56 : 80,
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid var(--c-border)",
-                  position: "relative",
-                  overflow: "hidden",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  flexDirection: "column", gap: 4,
-                }}
-                animate={{
-                  borderColor: [
-                    "rgba(255,255,255,0.07)",
-                    "rgba(59,139,235,0.3)",
-                    "rgba(255,255,255,0.07)",
-                  ],
-                }}
-                transition={{ duration: 2 + i * 0.3, repeat: Infinity, delay: i * 0.2 }}
-              >
-                {/* CSS-animated car silhouette (no Canvas — prevents 9 WebGL contexts) */}
-                <motion.div
-                  style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: isMobile ? "0.55rem" : "0.7rem",
-                    color: `hsl(${210 + i * 12}, 70%, 60%)`,
-                    letterSpacing: "0.05em",
-                    lineHeight: 1,
-                  }}
-                  animate={{ y: [-2, 2, -2], opacity: [0.5, 1, 0.5] }}
-                  transition={{ duration: 2 + i * 0.3, repeat: Infinity, ease: "easeInOut", delay: i * 0.15 }}
-                >
-                  ◈
-                </motion.div>
-                <motion.div
-                  style={{
-                    height: 1,
-                    background: `linear-gradient(90deg, transparent, hsl(${210 + i * 12}, 70%, 60%), transparent)`,
-                    width: "60%",
-                  }}
-                  animate={{ scaleX: [0, 1, 0] }}
-                  transition={{ duration: 1.5 + i * 0.2, repeat: Infinity, delay: i * 0.1 }}
-                />
-              </motion.div>
-            ))}
+          <div style={{
+            position: "relative",
+            height: isMobile ? 280 : 420,
+            borderRadius: 4,
+            overflow: "hidden",
+            background: "radial-gradient(ellipse at 50% 60%, rgba(59,139,235,0.07) 0%, rgba(14,16,18,0) 70%)",
+          }}>
+            {/* Subtle floor line for depth */}
+            <div style={{
+              position: "absolute", bottom: "22%", left: "10%", right: "10%", height: 1,
+              background: "linear-gradient(90deg, transparent, rgba(59,139,235,0.18), transparent)",
+              pointerEvents: "none", zIndex: 2,
+            }} />
+            <BugattiShowcaseCanvas />
+            <div style={{
+              position: "absolute", bottom: 14, right: 18,
+              fontFamily: "var(--font-mono)", fontSize: "0.55rem",
+              color: "var(--c-text-dim)", letterSpacing: "0.18em",
+              pointerEvents: "none", zIndex: 3,
+            }}>
+              DRAG TO INSPECT
+            </div>
           </div>
         </div>
       </StoryScene>
