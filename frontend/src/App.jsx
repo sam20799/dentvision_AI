@@ -427,7 +427,7 @@ const BugattiMount = () => {
 // Car is wrapped in a -90° Y rotation so its front faces +X (direction of travel).
 const PARK_Z  = -9;   // fixed garage depth
 const PARK_X  =  1.5; // final X after driving in
-const START_X = -12;  // off-screen left
+const START_X = -7.5; // front bumper peeks ~0.8 units through gate (left wall at x=-5.5)
 const WHEEL_R =  0.32; // wheel radius at 1.61m car height scale
 
 // Severity → colour mapping used by callout cards
@@ -1155,9 +1155,9 @@ const HeroCarController = ({ scrollProgressRef, lowPerf = false }) => {
   const { camera } = useThree();
   // Start looking slightly left so we catch the car entering from the left edge
   const curPos  = useRef(new THREE.Vector3(-1, 2.0, 3));
-  const curLook = useRef(new THREE.Vector3(-5, 0.6, PARK_Z));
+  const curLook = useRef(new THREE.Vector3(-5.5, 0.6, PARK_Z)); // gate opening
   const tgtPos  = useRef(new THREE.Vector3(-1, 2.0, 3));
-  const tgtLook = useRef(new THREE.Vector3(-5, 0.6, PARK_Z));
+  const tgtLook = useRef(new THREE.Vector3(-5.5, 0.6, PARK_Z));
 
   // Set FOV once on mount based on platform
   useEffect(() => {
@@ -1237,7 +1237,7 @@ const HeroCarController = ({ scrollProgressRef, lowPerf = false }) => {
 // Each card gets CARD_MS ms: FADE in → hold → FADE out. Cards don't overlap.
 const DamageAnnotations = ({ stageRef, lowPerf = false }) => {
   const anchors = lowPerf ? MOBILE_DAMAGE_ANCHORS : DAMAGE_ANCHORS;
-  const CARD_MS = 950, FADE = 220;
+  const CARD_MS = 600, FADE = 160;
   const op0 = useMotionValue(0), op1 = useMotionValue(0), op2 = useMotionValue(0), op3 = useMotionValue(0);
   const ops = [op0, op1, op2, op3];
   const y0 = useTransform(op0, [0, 1], [12, 0]);
@@ -1544,6 +1544,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
   // re-locking when onScroll sees sp=0.45 on the next tick.
   const cancelSequence = useCallback(() => {
     if (!autoSeqRef.current.running && !lockedRef.current) return;
+    if (autoSeqRef.current.seqTimeout) { clearTimeout(autoSeqRef.current.seqTimeout); autoSeqRef.current.seqTimeout = null; }
     if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
     autoSeqRef.current.running = false;
     scanProgressRef.current = 0;
@@ -1558,6 +1559,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
 
   // Tear the hero down (used by CTAs / nav that need free scroll)
   const dismissHero = useCallback(() => {
+    if (autoSeqRef.current.seqTimeout) { clearTimeout(autoSeqRef.current.seqTimeout); autoSeqRef.current.seqTimeout = null; }
     if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
     autoSeqRef.current.running = false;
     unlockScroll();
@@ -1593,6 +1595,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
 
     const reactivate = () => {
       if (heroActiveRef.current) return; // guard
+      if (autoSeqRef.current.seqTimeout) { clearTimeout(autoSeqRef.current.seqTimeout); autoSeqRef.current.seqTimeout = null; }
       if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
       autoSeqRef.current.running = false;
       lockedRef.current = false;
@@ -1628,17 +1631,20 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
     // ── Auto-sequence piecewise timeline ──
     //      0→1800 ms : p 0.45→0.62  zoom-in    1.8 s
     //   1800→3000 ms : p 0.62→0.77  scan       1.2 s
-    //   3000→6600 ms : p 0.77→0.87  damage     3.6 s  (3 cards × 1200 ms each)
-    //   3000→7800 ms : p 0.77→0.93  damage     4.8 s  (4 cards × 1200 ms each)
-    //   7800→8800 ms : p 0.93→1.00  complete   1.0 s
+    //      0→1800 ms : p 0.45→0.62  zoom-in    1.8 s
+    //   1800→3000 ms : p 0.62→0.77  scan       1.2 s
+    //   3000→5400 ms : p 0.77→0.93  damage     2.4 s  (4 cards × 600 ms each)
+    //   5400→5900 ms : p 0.93→1.00  complete   0.5 s
     const SEGS = [
       { end: 1800, pStart: 0.45, pEnd: 0.62 },  // zoom-in  1.8 s
       { end: 3000, pStart: 0.62, pEnd: 0.77 },  // scan     1.2 s
-      { end: 6800, pStart: 0.77, pEnd: 0.93 },  // damage   3.8 s  (4 × 950 ms)
-      { end: 7800, pStart: 0.93, pEnd: 1.00 },  // complete 1.0 s
+      { end: 5400, pStart: 0.77, pEnd: 0.93 },  // damage   2.4 s  (4 × 600 ms)
+      { end: 5900, pStart: 0.93, pEnd: 1.00 },  // complete 0.5 s
     ];
     const startAutoSequence = () => {
-      if (autoSeqRef.current.tick) return;
+      autoSeqRef.current.seqTimeout = null;
+      // Guard: if cancelled during the 600ms delay, running was set to false — abort.
+      if (!autoSeqRef.current.running || autoSeqRef.current.tick) return;
       const t0 = Date.now();
       autoSeqRef.current.tick = setInterval(() => {
         const ms  = Date.now() - t0;
@@ -1654,7 +1660,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
         if (ms >= SEGS[SEGS.length - 1].end) {
           clearInterval(autoSeqRef.current.tick);
           autoSeqRef.current.tick = null;
-          // Sequence committed; page stays locked until the user fires the chapter wipe.
+          autoSeqRef.current.running = false; // sequence done; page stays locked for swipe-up
         }
       }, 16);
     };
@@ -1680,7 +1686,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
             window.removeEventListener("touchstart", h.touchstart);
             window.removeEventListener("touchmove",  h.touchmove);
           }
-          setTimeout(startAutoSequence, 600);
+          autoSeqRef.current.seqTimeout = setTimeout(startAutoSequence, 600);
         }
       }
     };
@@ -1743,6 +1749,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
         window.removeEventListener("dv:dismiss-hero", dismissHero);
         document.documentElement.style.overflow = "";
         document.body.style.overflow = "";
+        if (autoSeqRef.current.seqTimeout) { clearTimeout(autoSeqRef.current.seqTimeout); autoSeqRef.current.seqTimeout = null; }
         if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
         unlockScroll();
       };
@@ -1765,6 +1772,7 @@ const HeroSection = ({ onAnalyze, onSceneReady: onSceneReadyProp }) => {
     return () => {
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("dv:dismiss-hero", dismissHero);
+      if (autoSeqRef.current.seqTimeout) { clearTimeout(autoSeqRef.current.seqTimeout); autoSeqRef.current.seqTimeout = null; }
       if (autoSeqRef.current.tick) { clearInterval(autoSeqRef.current.tick); autoSeqRef.current.tick = null; }
       unlockScroll();
     };

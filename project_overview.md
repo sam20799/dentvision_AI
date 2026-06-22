@@ -138,6 +138,26 @@ Response: { "status": "sent", "count": 2 }
 
 ## Changelog
 
+### v1.8 — Hero Sequence Polish & Bug Fixes (`main`)
+
+**Car bumper visible at gate on load**
+- `START_X` moved from `-12` to `-7.5` so the Supra's front bumper (~2.85 units from center) peeks ~0.85 units through the gate opening (left wall at X=−5.5) before the user swipes
+- Gives an immediate visual cue that there is a car waiting at the gate, making the "SWIPE UP TO EXPLORE" hint more intuitive
+- Initial camera look target updated from X=−5 to X=−5.5 (exact gate centre) so the bumper peek is framed dead-centre from frame 0
+
+**Hero sequence timing tightened**
+- Damage card reveal: `CARD_MS` 950ms → 600ms, `FADE` 220ms → 160ms — 4 cards now complete in 2.4s instead of 3.8s
+- Complete phase: 1000ms → 500ms
+- Total time to "INSPECTION COMPLETE" + swipe-up hint: ~6.5s (was ~8.4s), saving ~1.9s
+
+**Hero sequence state machine bug fixes**
+- Root cause: `setTimeout(startAutoSequence, 600)` ID was never stored, so `cancelSequence()` could not cancel it. If the user pulled the car back during the 600ms delay, the timeout fired anyway and started a phantom scan sequence with reset state — causing mid-air scanning and stage-5 swipe re-triggering the scan instead of the chapter wipe
+- Fix: store timeout in `autoSeqRef.current.seqTimeout`; clear it in `cancelSequence`, `dismissHero`, `reactivate`, and both effect cleanups
+- `startAutoSequence` now guards on `!autoSeqRef.current.running` (not just tick-null) so a stray fired timeout aborts immediately
+- `autoSeqRef.current.running` is now set to `false` when the sequence completes naturally at stage 5, preventing any follow-on stray timeout from restarting it
+
+---
+
 ### v1.7 — Bugatti Showpiece in Enterprise Scale Section (`main`)
 
 **New 3D showpiece in the "Enterprise Scale" story scene**
