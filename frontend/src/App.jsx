@@ -410,6 +410,18 @@ const BugattiShowcaseCanvas = memo(() => (
   </Canvas>
 ));
 
+// Lazy-mounts the canvas only when the enterprise section enters the viewport.
+// Keeps it unmounted during the hero sequence → zero GPU cost while hero runs.
+const BugattiMount = () => {
+  const ref = useRef();
+  const inView = useInView(ref, { margin: "300px 0px", once: false });
+  return (
+    <div ref={ref} style={{ width: "100%", height: "100%" }}>
+      {inView && <BugattiShowcaseCanvas />}
+    </div>
+  );
+};
+
 // ─── HERO VEHICLE ─────────────────────────────────────────────────────────────
 // Car drives LEFT → RIGHT (+X axis). outerRef moves X. innerRef animates body.
 // Car is wrapped in a -90° Y rotation so its front faces +X (direction of travel).
@@ -2264,7 +2276,7 @@ const ScrollStory = ({ onScanTrigger }) => {
               background: "linear-gradient(90deg, transparent, rgba(59,139,235,0.18), transparent)",
               pointerEvents: "none", zIndex: 2,
             }} />
-            <BugattiShowcaseCanvas />
+            <BugattiMount />
             <div style={{
               position: "absolute", bottom: 14, right: 18,
               fontFamily: "var(--font-mono)", fontSize: "0.55rem",
