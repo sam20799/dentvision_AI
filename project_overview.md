@@ -153,6 +153,11 @@ Response: { "status": "sent", "count": 2 }
 **Preload**
 - `useGLTF.preload("/models/car-bugatti.glb")` registered at module level alongside Supra and parked-car preloads — GLB parses during app load, not on scroll into view
 
+**Android hero lag fix: lazy-mount Bugatti canvas**
+- Root cause: `BugattiShowcaseCanvas` was mounted from page load and rendering every frame, running two WebGL contexts simultaneously during the hero sequence — Android GPU cannot handle both contexts at full performance
+- Fix: `BugattiMount` wrapper uses `useInView(margin: "300px")` to lazy-mount the canvas only when the enterprise section is within 300px of the viewport. During the hero sequence, the Bugatti canvas is unmounted entirely → zero GPU cost. Mounts smoothly as user scrolls past the hero.
+- Result: smooth 60fps hero on Android; Bugatti canvas frames only when in view
+
 ---
 
 ### v1.6 — Mobile Hero Touch Architecture (`main`)
