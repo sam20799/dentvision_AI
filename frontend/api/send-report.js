@@ -33,10 +33,10 @@ const SEVERITY = {
 const RECOMMENDATION = {
   F_Normal: 'No damage detected. Vehicle appears in good condition.',
   R_Normal: 'No damage detected. Vehicle appears in good condition.',
-  F_Breakage: 'Front component breakage detected. Inspect and replace broken parts.',
-  R_Breakage: 'Rear component breakage detected. Inspect and replace broken parts.',
-  F_Crushed: 'Severe front crush damage. Structural assessment required before driving.',
-  R_Crushed: 'Severe rear crush damage. Structural assessment required before driving.',
+  F_Breakage: 'Moderate front breakage detected. Inspect and replace broken parts before next use.',
+  R_Breakage: 'Moderate rear breakage detected. Inspect and replace broken parts before next use.',
+  F_Crushed: 'Severe front crush damage detected. Structural assessment required — do not drive until inspected.',
+  R_Crushed: 'Severe rear crush damage detected. Structural assessment required — do not drive until inspected.',
 };
 
 const BG = rgb(0.06, 0.06, 0.1);
